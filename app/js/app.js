@@ -167,6 +167,8 @@ function renderPage(page) {
             dom.pageImg.src = medImg.src;
             dom.pageImg.style.filter = '';
             dom.pageImg.style.transform = '';
+            // Re-position markers now that image has final dimensions
+            requestAnimationFrame(() => renderMarkers(page));
         }
     };
 
@@ -949,8 +951,12 @@ function setupMarkers() {
     let startX = 0, startY = 0;
     let moved = false;
 
-    dom.pageContainer.addEventListener('touchstart', (e) => {
+    dom.reader.addEventListener('touchstart', (e) => {
         if (e.touches.length !== 1) return;
+        // Don't trigger on UI elements (menu btn, tap zones, markers)
+        const target = e.target;
+        if (target.closest('#menu-btn, #menu-overlay, #marker-dialog, .marker')) return;
+
         startX = e.touches[0].clientX;
         startY = e.touches[0].clientY;
         moved = false;
@@ -970,7 +976,7 @@ function setupMarkers() {
         }, LONG_PRESS_MS);
     }, { passive: true });
 
-    dom.pageContainer.addEventListener('touchmove', (e) => {
+    dom.reader.addEventListener('touchmove', (e) => {
         if (!longPressTimer) return;
         const dx = e.touches[0].clientX - startX;
         const dy = e.touches[0].clientY - startY;
@@ -981,7 +987,7 @@ function setupMarkers() {
         }
     }, { passive: true });
 
-    dom.pageContainer.addEventListener('touchend', () => {
+    dom.reader.addEventListener('touchend', () => {
         clearTimeout(longPressTimer);
         longPressTimer = null;
     }, { passive: true });
