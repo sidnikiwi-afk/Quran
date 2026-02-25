@@ -79,19 +79,32 @@ html, body {
     overflow: hidden;
 }
 
-#page-container {
+#swipe-track {
+    display: flex;
+    direction: ltr; /* prevent RTL reversal of flex order */
+    width: 300%;
+    height: 100%;
+    transform: translateX(-33.333%);
+    will-change: transform;
+}
+
+#swipe-track.animating {
+    transition: transform 250ms ease-out;
+}
+
+.page-slot {
+    width: 33.333%;
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 100%;
-    height: 100%;
-    will-change: transform;
-    transition: transform 200ms ease-out;
+    flex-shrink: 0;
+    overflow: hidden;
     padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
 }
 
-#page-img,
-#page-img-2 {
+.page-img,
+.page-img-2 {
     max-width: 100%;
     max-height: 100vh;
     max-height: 100dvh;
@@ -102,8 +115,8 @@ html, body {
     border-radius: 2px;
 }
 
-#page-img[hidden],
-#page-img-2[hidden] {
+.page-img[hidden],
+.page-img-2[hidden] {
     display: none;
 }
 
@@ -735,8 +748,8 @@ html, body {
 /* ============================================================
    Dark Mode — Page Image Inversion
    ============================================================ */
-[data-theme="dark"] #page-img,
-[data-theme="dark"] #page-img-2 {
+[data-theme="dark"] .page-img,
+[data-theme="dark"] .page-img-2 {
     filter: invert(0.85) hue-rotate(180deg) sepia(0.15);
 }
 
@@ -744,12 +757,12 @@ html, body {
 /* ============================================================
    Dual Page (Landscape)
    ============================================================ */
-body.dual-page #page-container {
+body.dual-page .page-slot {
     flex-direction: row;
 }
 
-body.dual-page #page-img,
-body.dual-page #page-img-2 {
+body.dual-page .page-img,
+body.dual-page .page-img-2 {
     max-width: 50%;
 }
 
@@ -757,23 +770,7 @@ body.dual-page #page-img-2 {
 /* ============================================================
    Page Transition Animations
    ============================================================ */
-.page-slide-left {
-    animation: slideLeft 200ms ease-out;
-}
-
-.page-slide-right {
-    animation: slideRight 200ms ease-out;
-}
-
-@keyframes slideLeft {
-    from { transform: translateX(-30px); opacity: 0.5; }
-    to   { transform: translateX(0); opacity: 1; }
-}
-
-@keyframes slideRight {
-    from { transform: translateX(30px); opacity: 0.5; }
-    to   { transform: translateX(0); opacity: 1; }
-}
+/* Page transitions handled by swipe-track transform */
 
 
 /* ---- Fade Animations ---- */

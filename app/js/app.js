@@ -22,7 +22,8 @@ const state = {
 // Constants
 // ============================================================
 const PRELOAD_RANGE = 5;
-const SWIPE_THRESHOLD = 50;
+const SWIPE_THRESHOLD_RATIO = 0.2; // 20% of reader width
+const SWIPE_VELOCITY_THRESHOLD = 0.3; // px/ms
 const LONG_PRESS_MS = 500;
 const PAGE_INDICATOR_MS = 2000;
 const JUZ_TAB_MS = 3000;
@@ -39,6 +40,7 @@ let _dualPageMediaQuery = null;
 let _isDualActive = false;
 let _editingMarker = null;
 let _wakeLock = null;
+let _swipeAnimating = false;
 
 // ============================================================
 // Initialization
@@ -49,7 +51,7 @@ async function init() {
     await loadMetadata();
     setTheme(state.theme);
     setupBrightness();
-    renderPage(state.currentPage);
+    renderAllSlots();
     setupNavigation();
     setupMenu();
     setupMarkers();
@@ -61,9 +63,12 @@ async function init() {
 function cacheDom() {
     dom = {
         reader: document.getElementById('reader'),
-        pageContainer: document.getElementById('page-container'),
-        pageImg: document.getElementById('page-img'),
-        pageImg2: document.getElementById('page-img-2'),
+        swipeTrack: document.getElementById('swipe-track'),
+        slots: {
+            prev: document.getElementById('slot-prev'),
+            current: document.getElementById('slot-current'),
+            next: document.getElementById('slot-next'),
+        },
         tapLeft: document.getElementById('tap-left'),
         tapRight: document.getElementById('tap-right'),
         pageIndicator: document.getElementById('page-indicator'),
@@ -78,6 +83,9 @@ function cacheDom() {
         markerDelete: document.getElementById('marker-delete'),
         markerCancel: document.getElementById('marker-cancel'),
     };
+    // Convenience refs to current slot images (updated in renderAllSlots)
+    dom.pageImg = dom.slots.current.querySelector('.page-img');
+    dom.pageImg2 = dom.slots.current.querySelector('.page-img-2');
 }
 
 // ============================================================
@@ -148,68 +156,95 @@ function getImageUrl(page, tier = 'medium') {
 let _indicatorTimer = null;
 let _juzTabTimer = null;
 
-function renderPage(page) {
-    // 1. Clamp page
-    page = Math.max(1, Math.min(page, state.totalPages));
-    state.currentPage = page;
+function loadSlotImages(slot, page) {
+    const img1 = slot.querySelector('.page-img');
+    const img2 = slot.querySelector('.page-img-2');
 
-    // 2. Load thumbnail as blurred placeholder
-    dom.pageImg.style.filter = 'blur(10px)';
-    dom.pageImg.style.transform = 'scale(1.05)';
-    dom.pageImg.src = getImageUrl(page, 'thumb');
+    img1.dataset.page = String(page);
 
-    // 3. Load medium image and swap when ready
+    if (page < 1 || page > state.totalPages) {
+        img1.src = '';
+        img1.alt = '';
+        img1.style.filter = '';
+        img1.style.transform = '';
+        img2.setAttribute('hidden', '');
+        img2.src = '';
+        return;
+    }
+
+    // Thumb placeholder
+    img1.style.filter = 'blur(10px)';
+    img1.style.transform = 'scale(1.05)';
+    img1.src = getImageUrl(page, 'thumb');
+
+    // Load medium
     const medImg = new Image();
     medImg.src = getImageUrl(page, 'medium');
     medImg.onload = () => {
-        // Only swap if we're still on this page
-        if (state.currentPage === page) {
-            dom.pageImg.src = medImg.src;
-            dom.pageImg.style.filter = '';
-            dom.pageImg.style.transform = '';
-            // Re-position markers now that image has final dimensions
-            requestAnimationFrame(() => renderMarkers(page));
+        if (img1.dataset.page === String(page)) {
+            img1.src = medImg.src;
+            img1.style.filter = '';
+            img1.style.transform = '';
+            // Re-position markers if this is the current slot
+            if (slot === dom.slots.current && state.currentPage === page) {
+                requestAnimationFrame(() => renderMarkers(page));
+            }
         }
     };
 
-    // 4. Handle dual page (second image)
-    if (_isDualActive && dom.pageImg2) {
+    // Dual page (second image)
+    if (_isDualActive) {
         const page2 = page + 1;
         if (page2 <= state.totalPages) {
-            dom.pageImg2.removeAttribute('hidden');
-            dom.pageImg2.style.filter = 'blur(10px)';
-            dom.pageImg2.style.transform = 'scale(1.05)';
-            dom.pageImg2.src = getImageUrl(page2, 'thumb');
+            img2.removeAttribute('hidden');
+            img2.style.filter = 'blur(10px)';
+            img2.style.transform = 'scale(1.05)';
+            img2.src = getImageUrl(page2, 'thumb');
             const medImg2 = new Image();
             medImg2.src = getImageUrl(page2, 'medium');
             medImg2.onload = () => {
-                if (state.currentPage === page) {
-                    dom.pageImg2.src = medImg2.src;
-                    dom.pageImg2.style.filter = '';
-                    dom.pageImg2.style.transform = '';
+                if (img1.dataset.page === String(page)) {
+                    img2.src = medImg2.src;
+                    img2.style.filter = '';
+                    img2.style.transform = '';
                 }
             };
         } else {
-            dom.pageImg2.setAttribute('hidden', '');
+            img2.setAttribute('hidden', '');
         }
-    } else if (dom.pageImg2) {
-        dom.pageImg2.setAttribute('hidden', '');
+    } else {
+        img2.setAttribute('hidden', '');
     }
+}
 
-    // 5. Update page indicator
+function renderAllSlots() {
+    const page = state.currentPage;
+    const step = _isDualActive ? 2 : 1;
+
+    loadSlotImages(dom.slots.prev, page - step);
+    loadSlotImages(dom.slots.current, page);
+    loadSlotImages(dom.slots.next, page + step);
+
+    // Reset swipe track position (no transition)
+    dom.swipeTrack.classList.remove('animating');
+    dom.swipeTrack.style.transform = 'translateX(-33.333%)';
+
+    // Update convenience refs
+    dom.pageImg = dom.slots.current.querySelector('.page-img');
+    dom.pageImg2 = dom.slots.current.querySelector('.page-img-2');
+
+    // UI updates
     showPageIndicator(page);
-
-    // 6. Update juz tab
     showJuzTab(page);
-
-    // 7. Preload adjacent pages
     preloadAdjacent(page);
-
-    // 8. Save state
     saveState();
-
-    // 9. Render markers for this page
     renderMarkers(page);
+}
+
+function renderPage(page) {
+    page = Math.max(1, Math.min(page, state.totalPages));
+    state.currentPage = page;
+    renderAllSlots();
 }
 
 function showPageIndicator(page) {
@@ -225,7 +260,6 @@ function showPageIndicator(page) {
 function findCurrentJuz(page) {
     if (!state.metadata || !state.metadata.juz) return null;
     const juzArr = state.metadata.juz;
-    // Binary search for the juz containing this page
     let lo = 0, hi = juzArr.length - 1;
     let result = juzArr[0];
     while (lo <= hi) {
@@ -245,8 +279,7 @@ function showJuzTab(page) {
     const juz = findCurrentJuz(page);
     if (!juz) return;
     dom.juzTab.textContent = '\u062c\u0632\u0621 ' + juz.number;
-    // Position vertically based on juz number (1-30)
-    const pct = ((juz.number - 1) / 29) * 80 + 10; // 10%-90% range
+    const pct = ((juz.number - 1) / 29) * 80 + 10;
     dom.juzTab.style.top = pct + '%';
     dom.juzTab.classList.add('visible');
     clearTimeout(_juzTabTimer);
@@ -256,10 +289,10 @@ function showJuzTab(page) {
 }
 
 function renderMarkers(page) {
-    if (!dom.markersLayer) return;
+    if (!dom.markersLayer || !dom.pageImg) return;
     dom.markersLayer.innerHTML = '';
 
-    // Position markers layer exactly over the image
+    // Position markers layer exactly over the current slot's image
     const imgRect = dom.pageImg.getBoundingClientRect();
     const readerRect = dom.reader.getBoundingClientRect();
     dom.markersLayer.style.left = (imgRect.left - readerRect.left) + 'px';
@@ -292,12 +325,14 @@ function preloadAdjacent(page) {
 }
 
 // ============================================================
-// Navigation (swipe, tap, zoom)
+// Navigation (interactive swipe, tap, zoom)
 // ============================================================
 function setupNavigation() {
-    // --- Swipe detection ---
+    // --- Swipe state ---
     let touchStartX = 0, touchStartY = 0, touchStartTime = 0;
     let isSwiping = false;
+    let swipeDeltaX = 0;
+    let swipeLocked = false; // true once we commit to horizontal swipe
 
     // --- Pinch zoom state ---
     let initialPinchDist = 0;
@@ -328,27 +363,32 @@ function setupNavigation() {
         state.zoomLevel = 1;
         dom.pageImg.style.transform = '';
         // Swap back to medium if on high
-        const medUrl = getImageUrl(state.currentPage, 'medium');
         if (dom.pageImg.src.includes('/high/')) {
-            dom.pageImg.src = medUrl;
+            dom.pageImg.src = getImageUrl(state.currentPage, 'medium');
         }
     }
 
-    // Touch events on #reader for swipe
+    // ---- Touch events ----
     dom.reader.addEventListener('touchstart', (e) => {
+        if (_swipeAnimating) return;
+
         if (e.touches.length === 2) {
             // Pinch start
             isPinching = true;
             isSwiping = false;
+            swipeLocked = false;
             initialPinchDist = getDistance(e.touches[0], e.touches[1]);
             return;
         }
+
         if (e.touches.length === 1) {
             isPinching = false;
             touchStartX = e.touches[0].clientX;
             touchStartY = e.touches[0].clientY;
             touchStartTime = Date.now();
             isSwiping = false;
+            swipeLocked = false;
+            swipeDeltaX = 0;
 
             // Pan start when zoomed
             if (currentScale > 1) {
@@ -361,6 +401,8 @@ function setupNavigation() {
     }, { passive: true });
 
     dom.reader.addEventListener('touchmove', (e) => {
+        if (_swipeAnimating) return;
+
         if (e.touches.length === 2 && isPinching) {
             // Pinch zoom
             e.preventDefault();
@@ -371,6 +413,7 @@ function setupNavigation() {
             state.zoomLevel = scale;
             return;
         }
+
         if (e.touches.length === 1) {
             // Pan when zoomed
             if (currentScale > 1) {
@@ -382,23 +425,56 @@ function setupNavigation() {
                 applyTransform();
                 return;
             }
-            // Swipe detection
+
+            // Interactive swipe
             const dx = e.touches[0].clientX - touchStartX;
-            if (Math.abs(dx) > 10) {
-                isSwiping = true;
+            const dy = e.touches[0].clientY - touchStartY;
+
+            // Determine swipe direction lock
+            if (!swipeLocked && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    // Horizontal swipe
+                    swipeLocked = true;
+                    isSwiping = true;
+                } else {
+                    // Vertical scroll — don't interfere
+                    return;
+                }
+            }
+
+            if (isSwiping) {
                 e.preventDefault();
+                swipeDeltaX = dx;
+
+                // Check bounds: don't allow swiping past first/last page
+                const step = _isDualActive ? 2 : 1;
+                if (dx > 0 && state.currentPage - step < 1) {
+                    // At first page, resist swiping right (backward)
+                    swipeDeltaX = dx * 0.3; // rubber band effect
+                }
+                if (dx < 0 && state.currentPage + step > state.totalPages) {
+                    // At last page, resist swiping left (forward)
+                    swipeDeltaX = dx * 0.3;
+                }
+
+                // Move the swipe track in real time
+                dom.swipeTrack.style.transform = `translateX(calc(-33.333% + ${swipeDeltaX}px))`;
+
+                // Hide markers during swipe
+                dom.markersLayer.style.display = 'none';
             }
         }
     }, { passive: false });
 
     dom.reader.addEventListener('touchend', (e) => {
+        if (_swipeAnimating) return;
+
         if (isPinching && e.touches.length < 2) {
             // Pinch ended — finalize scale
             const finalScale = state.zoomLevel;
             currentScale = Math.max(1, Math.min(finalScale, 4));
             state.isZoomed = currentScale > 1;
 
-            // Swap to high-res if zoomed enough
             if (currentScale > 1.5) {
                 const highUrl = getImageUrl(state.currentPage, 'high');
                 if (!dom.pageImg.src.includes('/high/')) {
@@ -413,17 +489,30 @@ function setupNavigation() {
         }
 
         if (isSwiping) {
-            const deltaX = e.changedTouches[0].clientX - touchStartX;
-            if (Math.abs(deltaX) > SWIPE_THRESHOLD) {
-                if (deltaX < 0) {
-                    // Swipe left = next page (RTL forward)
-                    nextPage();
+            const elapsed = Date.now() - touchStartTime;
+            const velocity = Math.abs(swipeDeltaX) / Math.max(elapsed, 1);
+            const readerWidth = dom.reader.offsetWidth;
+            const threshold = readerWidth * SWIPE_THRESHOLD_RATIO;
+
+            // Show markers again
+            dom.markersLayer.style.display = '';
+
+            if (Math.abs(swipeDeltaX) > threshold || velocity > SWIPE_VELOCITY_THRESHOLD) {
+                if (swipeDeltaX < 0) {
+                    // Swiped left = next page (forward in RTL)
+                    snapToSlot('next');
                 } else {
-                    // Swipe right = previous page (RTL back)
-                    prevPage();
+                    // Swiped right = previous page (backward in RTL)
+                    snapToSlot('prev');
                 }
+            } else {
+                // Snap back to current
+                snapToSlot('current');
             }
+
             isSwiping = false;
+            swipeLocked = false;
+            swipeDeltaX = 0;
             return;
         }
 
@@ -437,22 +526,74 @@ function setupNavigation() {
         lastTapTime = now;
     }, { passive: true });
 
+    // ---- Snap animation ----
+    function snapToSlot(target) {
+        _swipeAnimating = true;
+        dom.swipeTrack.classList.add('animating');
+
+        if (target === 'next') {
+            dom.swipeTrack.style.transform = 'translateX(-66.666%)';
+        } else if (target === 'prev') {
+            dom.swipeTrack.style.transform = 'translateX(0%)';
+        } else {
+            dom.swipeTrack.style.transform = 'translateX(-33.333%)';
+        }
+
+        function onSnapEnd() {
+            dom.swipeTrack.removeEventListener('transitionend', onSnapEnd);
+            dom.swipeTrack.classList.remove('animating');
+
+            const step = _isDualActive ? 2 : 1;
+
+            if (target === 'next') {
+                const newPage = state.currentPage + step;
+                if (newPage <= state.totalPages) {
+                    navigator.vibrate?.(10);
+                    state.currentPage = newPage;
+                    renderAllSlots();
+                } else {
+                    dom.swipeTrack.style.transform = 'translateX(-33.333%)';
+                }
+            } else if (target === 'prev') {
+                const newPage = state.currentPage - step;
+                if (newPage >= 1) {
+                    navigator.vibrate?.(10);
+                    state.currentPage = newPage;
+                    renderAllSlots();
+                } else {
+                    dom.swipeTrack.style.transform = 'translateX(-33.333%)';
+                }
+            }
+
+            _swipeAnimating = false;
+        }
+
+        dom.swipeTrack.addEventListener('transitionend', onSnapEnd, { once: true });
+
+        // Fallback in case transitionend doesn't fire
+        setTimeout(() => {
+            if (_swipeAnimating) {
+                onSnapEnd();
+            }
+        }, 300);
+    }
+
     // --- Tap zones ---
     dom.tapLeft.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (currentScale > 1) return; // Don't navigate when zoomed
-        nextPage(); // Left = forward in RTL
+        if (currentScale > 1 || _swipeAnimating) return;
+        nextPage();
     });
 
     dom.tapRight.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (currentScale > 1) return;
-        prevPage(); // Right = backward in RTL
+        if (currentScale > 1 || _swipeAnimating) return;
+        prevPage();
     });
 
     // Middle area tap — toggle menu
     dom.reader.addEventListener('click', (e) => {
-        // Only if tap is in middle 50% horizontally
+        if (_swipeAnimating) return;
         const rect = dom.reader.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const pct = x / rect.width;
@@ -469,10 +610,10 @@ function setupNavigation() {
     document.addEventListener('keydown', (e) => {
         switch (e.key) {
             case 'ArrowLeft':
-                nextPage(); // Left = forward in RTL
+                nextPage();
                 break;
             case 'ArrowRight':
-                prevPage(); // Right = backward in RTL
+                prevPage();
                 break;
             case 'Escape':
                 closeMenu();
@@ -481,38 +622,58 @@ function setupNavigation() {
     });
 }
 
-function goToPage(page, direction) {
+function goToPage(page) {
     page = Math.max(1, Math.min(page, state.totalPages));
     if (page === state.currentPage) return;
-
-    // Determine animation direction if not provided
-    if (!direction) {
-        direction = page > state.currentPage ? 'forward' : 'backward';
-    }
-
-    // Add slide animation
-    const animClass = direction === 'forward' ? 'page-slide-left' : 'page-slide-right';
-    dom.pageContainer.classList.add(animClass);
-    setTimeout(() => {
-        dom.pageContainer.classList.remove(animClass);
-    }, 200);
-
     renderPage(page);
 }
 
 function nextPage() {
+    if (_swipeAnimating) return;
     const step = _isDualActive ? 2 : 1;
     if (state.currentPage + step <= state.totalPages) {
-        navigator.vibrate?.(10);
-        goToPage(state.currentPage + step, 'forward');
+        // Animate: snap the track to show the next slot, then reload
+        _swipeAnimating = true;
+        dom.swipeTrack.classList.add('animating');
+        dom.swipeTrack.style.transform = 'translateX(-66.666%)';
+        dom.markersLayer.style.display = 'none';
+
+        function onEnd() {
+            dom.swipeTrack.removeEventListener('transitionend', onEnd);
+            dom.swipeTrack.classList.remove('animating');
+            dom.markersLayer.style.display = '';
+            navigator.vibrate?.(10);
+            state.currentPage = Math.min(state.currentPage + step, state.totalPages);
+            renderAllSlots();
+            _swipeAnimating = false;
+        }
+
+        dom.swipeTrack.addEventListener('transitionend', onEnd, { once: true });
+        setTimeout(() => { if (_swipeAnimating) onEnd(); }, 300);
     }
 }
 
 function prevPage() {
+    if (_swipeAnimating) return;
     const step = _isDualActive ? 2 : 1;
     if (state.currentPage - step >= 1) {
-        navigator.vibrate?.(10);
-        goToPage(state.currentPage - step, 'backward');
+        _swipeAnimating = true;
+        dom.swipeTrack.classList.add('animating');
+        dom.swipeTrack.style.transform = 'translateX(0%)';
+        dom.markersLayer.style.display = 'none';
+
+        function onEnd() {
+            dom.swipeTrack.removeEventListener('transitionend', onEnd);
+            dom.swipeTrack.classList.remove('animating');
+            dom.markersLayer.style.display = '';
+            navigator.vibrate?.(10);
+            state.currentPage = Math.max(state.currentPage - step, 1);
+            renderAllSlots();
+            _swipeAnimating = false;
+        }
+
+        dom.swipeTrack.addEventListener('transitionend', onEnd, { once: true });
+        setTimeout(() => { if (_swipeAnimating) onEnd(); }, 300);
     }
 }
 
@@ -753,7 +914,7 @@ function setupMenu() {
     }, { passive: true });
     dom.menuPanel.addEventListener('touchend', (e) => {
         const dx = e.changedTouches[0].clientX - menuTouchStartX;
-        if (dx > 80) closeMenu(); // Swipe right > 80px = close
+        if (dx > 80) closeMenu();
     }, { passive: true });
 }
 
@@ -805,7 +966,6 @@ function openMenu() {
     dom.menuOverlay.removeAttribute('hidden');
     state.isMenuOpen = true;
     renderBookmarks();
-    // Update juz pill highlights
     updateJuzPillHighlight();
 }
 
@@ -828,19 +988,16 @@ function updateJuzPillHighlight() {
 function setTheme(theme) {
     state.theme = theme;
     document.body.setAttribute('data-theme', theme);
-    // Update theme-color meta tag
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (metaThemeColor) {
         metaThemeColor.setAttribute('content', theme === 'dark' ? '#1a1a1a' : '#f5f0e8');
     }
-    // Update toggle if it exists
     const toggle = document.getElementById('theme-toggle');
     if (toggle) toggle.checked = (theme === 'dark');
     saveState();
 }
 
 function setupBrightness() {
-    // Create brightness overlay if not already in DOM
     _brightnessOverlay = document.getElementById('brightness-overlay');
     if (!_brightnessOverlay) {
         _brightnessOverlay = document.createElement('div');
@@ -861,7 +1018,6 @@ function setupDualPage() {
     _dualPageMediaQuery.addEventListener('change', updateDualPageMode);
     window.addEventListener('resize', () => {
         updateDualPageMode();
-        // Re-position markers layer on resize
         renderMarkers(state.currentPage);
     });
     updateDualPageMode();
@@ -883,13 +1039,10 @@ function updateDualPageMode() {
         _isDualActive = shouldDual;
         if (shouldDual) {
             document.body.classList.add('dual-page');
-            dom.pageImg2.removeAttribute('hidden');
         } else {
             document.body.classList.remove('dual-page');
-            dom.pageImg2.setAttribute('hidden', '');
         }
-        // Re-render to load second page
-        renderPage(state.currentPage);
+        renderAllSlots();
     }
 }
 
@@ -928,12 +1081,10 @@ function renderBookmarks() {
             </div>
             <button class="bookmark-delete" data-index="${i}">&times;</button>
         `;
-        // Tap on info to go to page
         li.querySelector('.bookmark-info').addEventListener('click', () => {
             goToPage(bm.page);
             closeMenu();
         });
-        // Delete button
         li.querySelector('.bookmark-delete').addEventListener('click', (e) => {
             e.stopPropagation();
             deleteBookmark(i);
@@ -946,14 +1097,12 @@ function renderBookmarks() {
 // Markers
 // ============================================================
 function setupMarkers() {
-    // Long-press detection on page container
     let longPressTimer = null;
     let startX = 0, startY = 0;
     let moved = false;
 
     dom.reader.addEventListener('touchstart', (e) => {
         if (e.touches.length !== 1) return;
-        // Don't trigger on UI elements (menu btn, tap zones, markers)
         const target = e.target;
         if (target.closest('#menu-btn, #menu-overlay, #marker-dialog, .marker')) return;
 
@@ -963,12 +1112,11 @@ function setupMarkers() {
 
         longPressTimer = setTimeout(() => {
             if (moved) return;
-            // Calculate position relative to the page image
+            // Calculate position relative to the current slot's page image
             const imgRect = dom.pageImg.getBoundingClientRect();
             const x = ((startX - imgRect.left) / imgRect.width) * 100;
             const y = ((startY - imgRect.top) / imgRect.height) * 100;
 
-            // Only if inside the image bounds
             if (x >= 0 && x <= 100 && y >= 0 && y <= 100) {
                 navigator.vibrate?.(30);
                 openMarkerDialog(null, x, y);
@@ -1009,10 +1157,8 @@ function setupMarkers() {
     dom.markerSave.addEventListener('click', () => {
         const note = dom.markerNote.value.trim();
         if (_editingMarker && _editingMarker.index !== null && _editingMarker.index !== undefined && _editingMarker.existing) {
-            // Editing existing marker
             state.markers[_editingMarker.page][_editingMarker.index].note = note;
         } else if (_editingMarker) {
-            // New marker
             const page = _editingMarker.page;
             if (!state.markers[page]) state.markers[page] = [];
             state.markers[page].push({ x: _editingMarker.x, y: _editingMarker.y, note });
@@ -1084,7 +1230,6 @@ function setupWakeLock() {
         requestWakeLock();
     }
 
-    // Re-acquire on visibility change (iOS releases when backgrounded)
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && state.keepAwake) {
             requestWakeLock();
@@ -1105,7 +1250,6 @@ function registerServiceWorker() {
                 console.warn('SW registration failed:', err);
             });
 
-        // Listen for download progress messages from SW
         navigator.serviceWorker.addEventListener('message', (e) => {
             if (e.data.type === 'downloadProgress') {
                 updateDownloadProgress(e.data.downloaded, e.data.total);
@@ -1123,7 +1267,6 @@ function startDownloadAll() {
             totalPages: state.totalPages,
             tier: 'medium'
         });
-        // Update button to show progress
         const btn = document.getElementById('download-all-btn');
         if (btn) {
             btn.disabled = true;
