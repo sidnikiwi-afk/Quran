@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#f5f0e8">
+    <title>Quran 13-Line</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Page viewer -->
+    <div id="reader">
+        <div id="page-container">
+            <img id="page-img" src="" alt="Quran page" draggable="false">
+            <img id="page-img-2" src="" alt="Quran page" draggable="false" hidden>
+        </div>
+        <div id="tap-left" class="tap-zone"></div>
+        <div id="tap-right" class="tap-zone"></div>
+        <div id="page-indicator"></div>
+        <div id="juz-tab"></div>
+        <div id="markers-layer"></div>
+    </div>
+
+    <button id="menu-btn" aria-label="Menu">&#9776;</button>
+
+    <div id="menu-overlay" hidden>
+        <div id="menu-panel"></div>
+    </div>
+
+    <div id="marker-dialog" hidden>
+        <div id="marker-dialog-inner">
+            <textarea id="marker-note" placeholder="Add a note (optional)"></textarea>
+            <div id="marker-actions">
+                <button id="marker-save">Save</button>
+                <button id="marker-delete">Delete</button>
+                <button id="marker-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
