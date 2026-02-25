@@ -745,7 +745,7 @@ html, body {
    Dual Page (Landscape)
    ============================================================ */
 body.dual-page #page-container {
-    flex-direction: row-reverse;
+    flex-direction: row;
 }
 
 body.dual-page #page-img,
