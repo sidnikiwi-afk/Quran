@@ -527,33 +527,41 @@ function setupMenu() {
         <button id="menu-close-btn" aria-label="Close menu"
             style="position:sticky;top:0;right:0;float:right;width:40px;height:40px;border:none;border-radius:50%;background:var(--menu-border);color:var(--menu-text);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-bottom:8px;z-index:10;">&times;</button>
 
-        <!-- Search -->
+        <!-- Surahs -->
         <div class="menu-section">
-            <input type="text" class="menu-search" id="surah-search" placeholder="Search surah..." autocomplete="off">
-            <ul class="surah-list" id="surah-list"></ul>
+            <div class="menu-section-title collapsible" data-target="surah-content">Surahs <span class="collapse-arrow">&#9660;</span></div>
+            <div id="surah-content" class="collapsible-content">
+                <input type="text" class="menu-search" id="surah-search" placeholder="Search surah..." autocomplete="off">
+                <ul class="surah-list" id="surah-list"></ul>
+            </div>
         </div>
 
         <!-- Juz Pills -->
         <div class="menu-section">
-            <div class="menu-section-title">Juz</div>
-            <div class="juz-pills" id="juz-pills"></div>
+            <div class="menu-section-title collapsible" data-target="juz-content">Juz <span class="collapse-arrow">&#9660;</span></div>
+            <div id="juz-content" class="collapsible-content">
+                <div class="juz-pills" id="juz-pills"></div>
+            </div>
         </div>
 
         <!-- Page Jump -->
         <div class="menu-section">
-            <div class="menu-section-title">Go to Page</div>
-            <div class="page-jump" style="display:flex;gap:8px;">
-                <input type="number" id="page-jump-input" min="1" max="${state.totalPages}"
-                    placeholder="Page (1-${state.totalPages})"
-                    style="flex:1;padding:10px 14px;border:1.5px solid var(--menu-border);border-radius:var(--btn-radius);background:transparent;color:var(--menu-text);font-size:14px;outline:none;">
-                <button id="page-jump-btn"
-                    style="padding:10px 20px;border:none;border-radius:var(--btn-radius);background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Go</button>
+            <div class="menu-section-title collapsible" data-target="page-jump-content">Go to Page <span class="collapse-arrow">&#9660;</span></div>
+            <div id="page-jump-content" class="collapsible-content">
+                <div class="page-jump" style="display:flex;gap:8px;">
+                    <input type="number" id="page-jump-input" min="1" max="${state.totalPages}"
+                        placeholder="Page (1-${state.totalPages})"
+                        style="flex:1;padding:10px 14px;border:1.5px solid var(--menu-border);border-radius:var(--btn-radius);background:transparent;color:var(--menu-text);font-size:14px;outline:none;">
+                    <button id="page-jump-btn"
+                        style="padding:10px 20px;border:none;border-radius:var(--btn-radius);background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Go</button>
+                </div>
             </div>
         </div>
 
         <!-- Settings -->
         <div class="menu-section">
-            <div class="menu-section-title">Settings</div>
+            <div class="menu-section-title collapsible" data-target="settings-content">Settings <span class="collapse-arrow">&#9660;</span></div>
+            <div id="settings-content" class="collapsible-content">
 
             <div class="setting-row">
                 <span class="setting-label">Dark Mode</span>
@@ -586,24 +594,40 @@ function setupMenu() {
                     <span class="toggle-track"></span>
                 </label>
             </div>
+            </div>
         </div>
 
         <!-- Bookmarks -->
         <div class="menu-section">
-            <div class="menu-section-title">Bookmarks</div>
-            <button id="add-bookmark-btn"
-                style="width:100%;padding:10px;border:1.5px dashed var(--accent);border-radius:var(--btn-radius);background:transparent;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:12px;">+ Add Bookmark</button>
-            <ul class="bookmark-list" id="bookmark-list"></ul>
+            <div class="menu-section-title collapsible" data-target="bookmarks-content">Bookmarks <span class="collapse-arrow">&#9660;</span></div>
+            <div id="bookmarks-content" class="collapsible-content">
+                <button id="add-bookmark-btn"
+                    style="width:100%;padding:10px;border:1.5px dashed var(--accent);border-radius:var(--btn-radius);background:transparent;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:12px;">+ Add Bookmark</button>
+                <ul class="bookmark-list" id="bookmark-list"></ul>
+            </div>
         </div>
 
         <!-- Offline -->
         <div class="menu-section">
-            <div class="menu-section-title">Offline</div>
-            <button id="download-all-btn"
-                style="width:100%;padding:12px;border:none;border-radius:var(--btn-radius);background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Download All Pages</button>
-            <div id="download-progress" style="display:none;margin-top:8px;text-align:center;font-size:13px;color:#888;"></div>
+            <div class="menu-section-title collapsible" data-target="offline-content">Offline <span class="collapse-arrow">&#9660;</span></div>
+            <div id="offline-content" class="collapsible-content">
+                <button id="download-all-btn"
+                    style="width:100%;padding:12px;border:none;border-radius:var(--btn-radius);background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Download All Pages</button>
+                <div id="download-progress" style="display:none;margin-top:8px;text-align:center;font-size:13px;color:#888;"></div>
+            </div>
         </div>
     `;
+
+    // Collapsible sections
+    dom.menuPanel.querySelectorAll('.collapsible').forEach(title => {
+        title.addEventListener('click', () => {
+            const target = document.getElementById(title.dataset.target);
+            if (!target) return;
+            const isOpen = !target.classList.contains('collapsed');
+            target.classList.toggle('collapsed', isOpen);
+            title.classList.toggle('collapsed', isOpen);
+        });
+    });
 
     // Populate surah list
     const surahListEl = document.getElementById('surah-list');
