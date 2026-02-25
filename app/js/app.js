@@ -256,6 +256,15 @@ function showJuzTab(page) {
 function renderMarkers(page) {
     if (!dom.markersLayer) return;
     dom.markersLayer.innerHTML = '';
+
+    // Position markers layer exactly over the image
+    const imgRect = dom.pageImg.getBoundingClientRect();
+    const readerRect = dom.reader.getBoundingClientRect();
+    dom.markersLayer.style.left = (imgRect.left - readerRect.left) + 'px';
+    dom.markersLayer.style.top = (imgRect.top - readerRect.top) + 'px';
+    dom.markersLayer.style.width = imgRect.width + 'px';
+    dom.markersLayer.style.height = imgRect.height + 'px';
+
     const pageMarkers = state.markers[page];
     if (!pageMarkers || !Array.isArray(pageMarkers)) return;
     pageMarkers.forEach((marker, index) => {
@@ -804,7 +813,11 @@ function applyBrightness() {
 function setupDualPage() {
     _dualPageMediaQuery = window.matchMedia('(orientation: landscape)');
     _dualPageMediaQuery.addEventListener('change', updateDualPageMode);
-    window.addEventListener('resize', updateDualPageMode);
+    window.addEventListener('resize', () => {
+        updateDualPageMode();
+        // Re-position markers layer on resize
+        renderMarkers(state.currentPage);
+    });
     updateDualPageMode();
 }
 
