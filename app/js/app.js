@@ -529,8 +529,8 @@ function setupMenu() {
 
         <!-- Surahs -->
         <div class="menu-section">
-            <div class="menu-section-title collapsible" data-target="surah-content">Surahs <span class="collapse-arrow">&#9660;</span></div>
-            <div id="surah-content" class="collapsible-content">
+            <div class="menu-section-title collapsible collapsed" data-target="surah-content">Surahs <span class="collapse-arrow">&#9660;</span></div>
+            <div id="surah-content" class="collapsible-content collapsed">
                 <input type="text" class="menu-search" id="surah-search" placeholder="Search surah..." autocomplete="off">
                 <ul class="surah-list" id="surah-list"></ul>
             </div>
