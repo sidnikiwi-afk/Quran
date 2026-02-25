@@ -523,6 +523,10 @@ function setupMenu() {
 
     // Build menu HTML
     dom.menuPanel.innerHTML = `
+        <!-- Close button -->
+        <button id="menu-close-btn" aria-label="Close menu"
+            style="position:sticky;top:0;right:0;float:right;width:40px;height:40px;border:none;border-radius:50%;background:var(--menu-border);color:var(--menu-text);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-bottom:8px;z-index:10;">&times;</button>
+
         <!-- Search -->
         <div class="menu-section">
             <input type="text" class="menu-search" id="surah-search" placeholder="Search surah..." autocomplete="off">
@@ -688,6 +692,12 @@ function setupMenu() {
         }
     });
 
+    // Menu close button (inside panel)
+    document.getElementById('menu-close-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeMenu();
+    });
+
     // Menu button
     dom.menuBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -709,6 +719,16 @@ function setupMenu() {
     dom.menuPanel.addEventListener('click', (e) => {
         e.stopPropagation();
     });
+
+    // Swipe right on menu panel to close (RTL-friendly dismiss)
+    let menuTouchStartX = 0;
+    dom.menuPanel.addEventListener('touchstart', (e) => {
+        menuTouchStartX = e.touches[0].clientX;
+    }, { passive: true });
+    dom.menuPanel.addEventListener('touchend', (e) => {
+        const dx = e.changedTouches[0].clientX - menuTouchStartX;
+        if (dx > 80) closeMenu(); // Swipe right > 80px = close
+    }, { passive: true });
 }
 
 function renderSurahList(container, surahs, query) {
