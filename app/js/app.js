@@ -160,7 +160,7 @@ function renderPage(page) {
 
     // 3. Load medium image and swap when ready
     const medImg = new Image();
-    medImg.src = getImageUrl(page, 'medium');
+    medImg.src = getImageUrl(page, 'high');
     medImg.onload = () => {
         // Only swap if we're still on this page
         if (state.currentPage === page) {
@@ -283,10 +283,10 @@ function renderMarkers(page) {
 function preloadAdjacent(page) {
     for (let i = 1; i <= PRELOAD_RANGE; i++) {
         if (page + i <= state.totalPages) {
-            new Image().src = getImageUrl(page + i, 'medium');
+            new Image().src = getImageUrl(page + i, 'high');
         }
         if (page - i >= 1) {
-            new Image().src = getImageUrl(page - i, 'medium');
+            new Image().src = getImageUrl(page - i, 'high');
         }
     }
 }
@@ -327,11 +327,7 @@ function setupNavigation() {
         state.isZoomed = false;
         state.zoomLevel = 1;
         dom.pageImg.style.transform = '';
-        // Swap back to medium if on high
-        const medUrl = getImageUrl(state.currentPage, 'medium');
-        if (dom.pageImg.src.includes('/high/')) {
-            dom.pageImg.src = medUrl;
-        }
+        // Already using high-res by default
     }
 
     // Touch events on #reader for swipe
@@ -398,13 +394,8 @@ function setupNavigation() {
             currentScale = Math.max(1, Math.min(finalScale, 4));
             state.isZoomed = currentScale > 1;
 
-            // Swap to high-res if zoomed enough
-            if (currentScale > 1.5) {
-                const highUrl = getImageUrl(state.currentPage, 'high');
-                if (!dom.pageImg.src.includes('/high/')) {
-                    dom.pageImg.src = highUrl;
-                }
-            } else if (currentScale <= 1.05) {
+            // Already using high-res by default
+            if (currentScale <= 1.05) {
                 resetZoom();
             }
             applyTransform();
@@ -1121,7 +1112,7 @@ function startDownloadAll() {
         navigator.serviceWorker.controller.postMessage({
             type: 'downloadAll',
             totalPages: state.totalPages,
-            tier: 'medium'
+            tier: 'high'
         });
         // Update button to show progress
         const btn = document.getElementById('download-all-btn');
