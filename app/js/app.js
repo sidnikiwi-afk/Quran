@@ -33,6 +33,13 @@ const DEBOUNCE_SAVE_MS = 500;
 // ============================================================
 let dom = {};
 
+// Forward declarations for cross-referenced module-level variables
+let _brightnessOverlay = null;
+let _dualPageMediaQuery = null;
+let _isDualActive = false;
+let _editingMarker = null;
+let _wakeLock = null;
+
 // ============================================================
 // Initialization
 // ============================================================
@@ -40,12 +47,13 @@ async function init() {
     cacheDom();
     loadState();
     await loadMetadata();
+    setTheme(state.theme);
+    setupBrightness();
     renderPage(state.currentPage);
     setupNavigation();
     setupMenu();
     setupMarkers();
     setupDualPage();
-    setupBrightness();
     setupWakeLock();
     registerServiceWorker();
 }
@@ -162,19 +170,43 @@ function renderPage(page) {
         }
     };
 
-    // 4. Update page indicator
+    // 4. Handle dual page (second image)
+    if (_isDualActive && dom.pageImg2) {
+        const page2 = page + 1;
+        if (page2 <= state.totalPages) {
+            dom.pageImg2.removeAttribute('hidden');
+            dom.pageImg2.style.filter = 'blur(10px)';
+            dom.pageImg2.style.transform = 'scale(1.05)';
+            dom.pageImg2.src = getImageUrl(page2, 'thumb');
+            const medImg2 = new Image();
+            medImg2.src = getImageUrl(page2, 'medium');
+            medImg2.onload = () => {
+                if (state.currentPage === page) {
+                    dom.pageImg2.src = medImg2.src;
+                    dom.pageImg2.style.filter = '';
+                    dom.pageImg2.style.transform = '';
+                }
+            };
+        } else {
+            dom.pageImg2.setAttribute('hidden', '');
+        }
+    } else if (dom.pageImg2) {
+        dom.pageImg2.setAttribute('hidden', '');
+    }
+
+    // 5. Update page indicator
     showPageIndicator(page);
 
-    // 5. Update juz tab
+    // 6. Update juz tab
     showJuzTab(page);
 
-    // 6. Preload adjacent pages
+    // 7. Preload adjacent pages
     preloadAdjacent(page);
 
-    // 7. Save state
+    // 8. Save state
     saveState();
 
-    // 8. Render markers for this page
+    // 9. Render markers for this page
     renderMarkers(page);
 }
 
@@ -458,7 +490,7 @@ function goToPage(page, direction) {
 }
 
 function nextPage() {
-    const step = (state.dualPage === 'on') ? 2 : 1;
+    const step = _isDualActive ? 2 : 1;
     if (state.currentPage + step <= state.totalPages) {
         navigator.vibrate?.(10);
         goToPage(state.currentPage + step, 'forward');
@@ -466,7 +498,7 @@ function nextPage() {
 }
 
 function prevPage() {
-    const step = (state.dualPage === 'on') ? 2 : 1;
+    const step = _isDualActive ? 2 : 1;
     if (state.currentPage - step >= 1) {
         navigator.vibrate?.(10);
         goToPage(state.currentPage - step, 'backward');
@@ -477,62 +509,584 @@ function prevPage() {
 // Menu
 // ============================================================
 function setupMenu() {
-    // TODO: Task 7
+    const surahs = state.metadata?.surahs || [];
+    const juzData = state.metadata?.juz || [];
+
+    // Build menu HTML
+    dom.menuPanel.innerHTML = `
+        <!-- Search -->
+        <div class="menu-section">
+            <input type="text" class="menu-search" id="surah-search" placeholder="Search surah..." autocomplete="off">
+            <ul class="surah-list" id="surah-list"></ul>
+        </div>
+
+        <!-- Juz Pills -->
+        <div class="menu-section">
+            <div class="menu-section-title">Juz</div>
+            <div class="juz-pills" id="juz-pills"></div>
+        </div>
+
+        <!-- Page Jump -->
+        <div class="menu-section">
+            <div class="menu-section-title">Go to Page</div>
+            <div class="page-jump" style="display:flex;gap:8px;">
+                <input type="number" id="page-jump-input" min="1" max="${state.totalPages}"
+                    placeholder="Page (1-${state.totalPages})"
+                    style="flex:1;padding:10px 14px;border:1.5px solid var(--menu-border);border-radius:var(--btn-radius);background:transparent;color:var(--menu-text);font-size:14px;outline:none;">
+                <button id="page-jump-btn"
+                    style="padding:10px 20px;border:none;border-radius:var(--btn-radius);background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Go</button>
+            </div>
+        </div>
+
+        <!-- Settings -->
+        <div class="menu-section">
+            <div class="menu-section-title">Settings</div>
+
+            <div class="setting-row">
+                <span class="setting-label">Dark Mode</span>
+                <label class="toggle">
+                    <input type="checkbox" id="theme-toggle" ${state.theme === 'dark' ? 'checked' : ''}>
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+
+            <div class="setting-row">
+                <span class="setting-label">Dual Page</span>
+                <select id="dual-page-select"
+                    style="padding:6px 10px;border:1.5px solid var(--menu-border);border-radius:var(--btn-radius);background:var(--menu-bg);color:var(--menu-text);font-size:14px;outline:none;cursor:pointer;">
+                    <option value="auto" ${state.dualPage === 'auto' ? 'selected' : ''}>Auto</option>
+                    <option value="on" ${state.dualPage === 'on' ? 'selected' : ''}>On</option>
+                    <option value="off" ${state.dualPage === 'off' ? 'selected' : ''}>Off</option>
+                </select>
+            </div>
+
+            <div class="slider-row">
+                <span class="slider-icon">&#9788;</span>
+                <input type="range" id="brightness-slider" min="0.3" max="1" step="0.05" value="${state.brightness}">
+                <span class="slider-icon">&#9728;</span>
+            </div>
+
+            <div class="setting-row">
+                <span class="setting-label">Keep Screen Awake</span>
+                <label class="toggle">
+                    <input type="checkbox" id="wakelock-toggle" ${state.keepAwake ? 'checked' : ''}>
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Bookmarks -->
+        <div class="menu-section">
+            <div class="menu-section-title">Bookmarks</div>
+            <button id="add-bookmark-btn"
+                style="width:100%;padding:10px;border:1.5px dashed var(--accent);border-radius:var(--btn-radius);background:transparent;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:12px;">+ Add Bookmark</button>
+            <ul class="bookmark-list" id="bookmark-list"></ul>
+        </div>
+
+        <!-- Offline -->
+        <div class="menu-section">
+            <div class="menu-section-title">Offline</div>
+            <button id="download-all-btn"
+                style="width:100%;padding:12px;border:none;border-radius:var(--btn-radius);background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Download All Pages</button>
+            <div id="download-progress" style="display:none;margin-top:8px;text-align:center;font-size:13px;color:#888;"></div>
+        </div>
+    `;
+
+    // Populate surah list
+    const surahListEl = document.getElementById('surah-list');
+    renderSurahList(surahListEl, surahs, '');
+
+    // Populate juz pills
+    const juzPillsEl = document.getElementById('juz-pills');
+    const currentJuz = findCurrentJuz(state.currentPage);
+    juzData.forEach(juz => {
+        const pill = document.createElement('button');
+        pill.className = 'juz-pill' + (currentJuz && currentJuz.number === juz.number ? ' active' : '');
+        pill.textContent = juz.number;
+        pill.addEventListener('click', () => {
+            goToPage(juz.startPage);
+            closeMenu();
+        });
+        juzPillsEl.appendChild(pill);
+    });
+
+    // Search filter
+    const searchInput = document.getElementById('surah-search');
+    searchInput.addEventListener('input', () => {
+        const query = searchInput.value.trim().toLowerCase();
+        renderSurahList(surahListEl, surahs, query);
+    });
+
+    // Page jump
+    const pageJumpInput = document.getElementById('page-jump-input');
+    const pageJumpBtn = document.getElementById('page-jump-btn');
+    const doPageJump = () => {
+        const val = parseInt(pageJumpInput.value, 10);
+        if (val >= 1 && val <= state.totalPages) {
+            goToPage(val);
+            closeMenu();
+        }
+    };
+    pageJumpBtn.addEventListener('click', doPageJump);
+    pageJumpInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') doPageJump();
+    });
+
+    // Theme toggle
+    document.getElementById('theme-toggle').addEventListener('change', (e) => {
+        setTheme(e.target.checked ? 'dark' : 'light');
+    });
+
+    // Dual page select
+    document.getElementById('dual-page-select').addEventListener('change', (e) => {
+        state.dualPage = e.target.value;
+        saveState();
+        updateDualPageMode();
+    });
+
+    // Brightness slider
+    document.getElementById('brightness-slider').addEventListener('input', (e) => {
+        state.brightness = parseFloat(e.target.value);
+        applyBrightness();
+        saveState();
+    });
+
+    // Wake lock toggle
+    document.getElementById('wakelock-toggle').addEventListener('change', (e) => {
+        state.keepAwake = e.target.checked;
+        if (state.keepAwake) {
+            requestWakeLock();
+        } else {
+            releaseWakeLock();
+        }
+        saveState();
+    });
+
+    // Download all button
+    document.getElementById('download-all-btn').addEventListener('click', () => {
+        startDownloadAll();
+    });
+
+    // Add bookmark button
+    document.getElementById('add-bookmark-btn').addEventListener('click', () => {
+        const currentSurah = findCurrentSurah(state.currentPage);
+        const defaultName = currentSurah
+            ? `${currentSurah.name} - p.${state.currentPage}`
+            : `Page ${state.currentPage}`;
+        const name = prompt('Bookmark name:', defaultName);
+        if (name !== null && name.trim() !== '') {
+            addBookmark(name.trim(), state.currentPage);
+        }
+    });
+
+    // Menu button
+    dom.menuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (state.isMenuOpen) {
+            closeMenu();
+        } else {
+            openMenu();
+        }
+    });
+
+    // Backdrop tap closes menu
+    dom.menuOverlay.addEventListener('click', (e) => {
+        if (e.target === dom.menuOverlay) {
+            closeMenu();
+        }
+    });
+
+    // Prevent clicks inside panel from closing
+    dom.menuPanel.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+}
+
+function renderSurahList(container, surahs, query) {
+    container.innerHTML = '';
+    const filtered = query
+        ? surahs.filter(s =>
+            s.name.toLowerCase().includes(query) ||
+            s.arabicName.includes(query) ||
+            String(s.number).includes(query))
+        : surahs;
+
+    filtered.forEach(s => {
+        const li = document.createElement('li');
+        li.className = 'surah-item';
+        li.innerHTML = `
+            <span class="surah-page" style="font-size:12px;color:#888;flex-shrink:0;min-width:30px;">${s.startPage}</span>
+            <span class="surah-name-en">${s.name}</span>
+            <span class="surah-name-ar">${s.arabicName}</span>
+            <span class="surah-number">${s.number}</span>
+        `;
+        li.addEventListener('click', () => {
+            goToPage(s.startPage);
+            closeMenu();
+        });
+        container.appendChild(li);
+    });
+
+    if (filtered.length === 0) {
+        container.innerHTML = '<li class="empty-state">No surahs found</li>';
+    }
+}
+
+function findCurrentSurah(page) {
+    if (!state.metadata || !state.metadata.surahs) return null;
+    const surahs = state.metadata.surahs;
+    let result = surahs[0];
+    for (let i = 0; i < surahs.length; i++) {
+        if (surahs[i].startPage <= page) {
+            result = surahs[i];
+        } else {
+            break;
+        }
+    }
+    return result;
 }
 
 function openMenu() {
-    // TODO: Task 7
+    dom.menuOverlay.removeAttribute('hidden');
+    state.isMenuOpen = true;
+    renderBookmarks();
+    // Update juz pill highlights
+    updateJuzPillHighlight();
 }
 
 function closeMenu() {
-    // TODO: Task 7
+    dom.menuOverlay.setAttribute('hidden', '');
+    state.isMenuOpen = false;
+}
+
+function updateJuzPillHighlight() {
+    const currentJuz = findCurrentJuz(state.currentPage);
+    const pills = document.querySelectorAll('.juz-pill');
+    pills.forEach((pill, i) => {
+        pill.classList.toggle('active', currentJuz && currentJuz.number === i + 1);
+    });
 }
 
 // ============================================================
 // Display Modes
 // ============================================================
 function setTheme(theme) {
-    // TODO: Task 8
+    state.theme = theme;
+    document.body.setAttribute('data-theme', theme);
+    // Update theme-color meta tag
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+        metaThemeColor.setAttribute('content', theme === 'dark' ? '#1a1a1a' : '#f5f0e8');
+    }
+    // Update toggle if it exists
+    const toggle = document.getElementById('theme-toggle');
+    if (toggle) toggle.checked = (theme === 'dark');
+    saveState();
 }
 
 function setupBrightness() {
-    // TODO: Task 8
+    // Create brightness overlay if not already in DOM
+    _brightnessOverlay = document.getElementById('brightness-overlay');
+    if (!_brightnessOverlay) {
+        _brightnessOverlay = document.createElement('div');
+        _brightnessOverlay.id = 'brightness-overlay';
+        document.body.appendChild(_brightnessOverlay);
+    }
+    applyBrightness();
+}
+
+function applyBrightness() {
+    if (_brightnessOverlay) {
+        _brightnessOverlay.style.opacity = 1 - state.brightness;
+    }
 }
 
 function setupDualPage() {
-    // TODO: Task 8
+    _dualPageMediaQuery = window.matchMedia('(orientation: landscape)');
+    _dualPageMediaQuery.addEventListener('change', updateDualPageMode);
+    window.addEventListener('resize', updateDualPageMode);
+    updateDualPageMode();
+}
+
+function updateDualPageMode() {
+    const isLandscape = _dualPageMediaQuery ? _dualPageMediaQuery.matches : false;
+    let shouldDual = false;
+
+    if (state.dualPage === 'auto') {
+        shouldDual = isLandscape;
+    } else if (state.dualPage === 'on') {
+        shouldDual = true;
+    } else {
+        shouldDual = false;
+    }
+
+    if (shouldDual !== _isDualActive) {
+        _isDualActive = shouldDual;
+        if (shouldDual) {
+            document.body.classList.add('dual-page');
+            dom.pageImg2.removeAttribute('hidden');
+        } else {
+            document.body.classList.remove('dual-page');
+            dom.pageImg2.setAttribute('hidden', '');
+        }
+        // Re-render to load second page
+        renderPage(state.currentPage);
+    }
 }
 
 // ============================================================
 // Bookmarks
 // ============================================================
 function addBookmark(name, page) {
-    // TODO: Task 9
+    state.bookmarks.push({ name, page });
+    saveState();
+    renderBookmarks();
 }
 
 function deleteBookmark(index) {
-    // TODO: Task 9
+    state.bookmarks.splice(index, 1);
+    saveState();
+    renderBookmarks();
+}
+
+function renderBookmarks() {
+    const list = document.getElementById('bookmark-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    if (state.bookmarks.length === 0) {
+        list.innerHTML = '<li class="empty-state">No bookmarks yet</li>';
+        return;
+    }
+
+    state.bookmarks.forEach((bm, i) => {
+        const li = document.createElement('li');
+        li.className = 'bookmark-item';
+        li.innerHTML = `
+            <div class="bookmark-info">
+                <div class="bookmark-name">${bm.name}</div>
+                <div class="bookmark-page">Page ${bm.page}</div>
+            </div>
+            <button class="bookmark-delete" data-index="${i}">&times;</button>
+        `;
+        // Tap on info to go to page
+        li.querySelector('.bookmark-info').addEventListener('click', () => {
+            goToPage(bm.page);
+            closeMenu();
+        });
+        // Delete button
+        li.querySelector('.bookmark-delete').addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteBookmark(i);
+        });
+        list.appendChild(li);
+    });
 }
 
 // ============================================================
 // Markers
 // ============================================================
 function setupMarkers() {
-    // TODO: Task 9
+    // Long-press detection on page container
+    let longPressTimer = null;
+    let startX = 0, startY = 0;
+    let moved = false;
+
+    dom.pageContainer.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        moved = false;
+
+        longPressTimer = setTimeout(() => {
+            if (moved) return;
+            // Calculate position relative to the page image
+            const imgRect = dom.pageImg.getBoundingClientRect();
+            const x = ((startX - imgRect.left) / imgRect.width) * 100;
+            const y = ((startY - imgRect.top) / imgRect.height) * 100;
+
+            // Only if inside the image bounds
+            if (x >= 0 && x <= 100 && y >= 0 && y <= 100) {
+                navigator.vibrate?.(30);
+                openMarkerDialog(null, x, y);
+            }
+        }, LONG_PRESS_MS);
+    }, { passive: true });
+
+    dom.pageContainer.addEventListener('touchmove', (e) => {
+        if (!longPressTimer) return;
+        const dx = e.touches[0].clientX - startX;
+        const dy = e.touches[0].clientY - startY;
+        if (Math.sqrt(dx * dx + dy * dy) > 10) {
+            moved = true;
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        }
+    }, { passive: true });
+
+    dom.pageContainer.addEventListener('touchend', () => {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+    }, { passive: true });
+
+    // Marker taps (existing markers)
+    dom.markersLayer.addEventListener('click', (e) => {
+        const markerEl = e.target.closest('.marker');
+        if (!markerEl) return;
+        e.stopPropagation();
+        const page = parseInt(markerEl.dataset.page, 10);
+        const index = parseInt(markerEl.dataset.index, 10);
+        const marker = state.markers[page]?.[index];
+        if (marker) {
+            openMarkerDialog({ page, index }, marker.x, marker.y, marker.note);
+        }
+    });
+
+    // Dialog buttons
+    dom.markerSave.addEventListener('click', () => {
+        const note = dom.markerNote.value.trim();
+        if (_editingMarker && _editingMarker.index !== null && _editingMarker.index !== undefined && _editingMarker.existing) {
+            // Editing existing marker
+            state.markers[_editingMarker.page][_editingMarker.index].note = note;
+        } else if (_editingMarker) {
+            // New marker
+            const page = _editingMarker.page;
+            if (!state.markers[page]) state.markers[page] = [];
+            state.markers[page].push({ x: _editingMarker.x, y: _editingMarker.y, note });
+        }
+        saveState();
+        renderMarkers(state.currentPage);
+        closeMarkerDialog();
+    });
+
+    dom.markerDelete.addEventListener('click', () => {
+        if (_editingMarker && _editingMarker.existing) {
+            const page = _editingMarker.page;
+            state.markers[page].splice(_editingMarker.index, 1);
+            if (state.markers[page].length === 0) delete state.markers[page];
+            saveState();
+            renderMarkers(state.currentPage);
+        }
+        closeMarkerDialog();
+    });
+
+    dom.markerCancel.addEventListener('click', () => {
+        closeMarkerDialog();
+    });
+}
+
+function openMarkerDialog(existing, x, y, note) {
+    if (existing) {
+        _editingMarker = { page: existing.page, index: existing.index, x, y, existing: true };
+        dom.markerNote.value = note || '';
+        dom.markerDelete.style.display = '';
+    } else {
+        _editingMarker = { page: state.currentPage, index: null, x, y, existing: false };
+        dom.markerNote.value = '';
+        dom.markerDelete.style.display = 'none';
+    }
+    dom.markerDialog.removeAttribute('hidden');
+    dom.markerNote.focus();
+}
+
+function closeMarkerDialog() {
+    dom.markerDialog.setAttribute('hidden', '');
+    _editingMarker = null;
+    dom.markerNote.value = '';
 }
 
 // ============================================================
 // Wake Lock
 // ============================================================
+async function requestWakeLock() {
+    if ('wakeLock' in navigator) {
+        try {
+            _wakeLock = await navigator.wakeLock.request('screen');
+            _wakeLock.addEventListener('release', () => { _wakeLock = null; });
+        } catch (e) {
+            // User denied or not supported
+        }
+    }
+}
+
+async function releaseWakeLock() {
+    if (_wakeLock) {
+        await _wakeLock.release();
+        _wakeLock = null;
+    }
+}
+
 function setupWakeLock() {
-    // TODO: Task 9
+    if (state.keepAwake) {
+        requestWakeLock();
+    }
+
+    // Re-acquire on visibility change (iOS releases when backgrounded)
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && state.keepAwake) {
+            requestWakeLock();
+        }
+    });
 }
 
 // ============================================================
 // Service Worker
 // ============================================================
 function registerServiceWorker() {
-    // TODO: Task 10
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js')
+            .then(reg => {
+                console.log('SW registered:', reg.scope);
+            })
+            .catch(err => {
+                console.warn('SW registration failed:', err);
+            });
+
+        // Listen for download progress messages from SW
+        navigator.serviceWorker.addEventListener('message', (e) => {
+            if (e.data.type === 'downloadProgress') {
+                updateDownloadProgress(e.data.downloaded, e.data.total);
+            } else if (e.data.type === 'downloadComplete') {
+                updateDownloadComplete(e.data.downloaded, e.data.total, e.data.errors);
+            }
+        });
+    }
+}
+
+function startDownloadAll() {
+    if (navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+            type: 'downloadAll',
+            totalPages: state.totalPages,
+            tier: 'medium'
+        });
+        // Update button to show progress
+        const btn = document.getElementById('download-all-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Downloading... 0%';
+        }
+    }
+}
+
+function updateDownloadProgress(downloaded, total) {
+    const pct = Math.round((downloaded / total) * 100);
+    const btn = document.getElementById('download-all-btn');
+    if (btn) {
+        btn.textContent = `Downloading... ${pct}% (${downloaded}/${total})`;
+    }
+}
+
+function updateDownloadComplete(downloaded, total, errors) {
+    const btn = document.getElementById('download-all-btn');
+    if (btn) {
+        btn.disabled = false;
+        if (errors > 0) {
+            btn.textContent = `Done (${errors} errors). Tap to retry.`;
+        } else {
+            btn.textContent = '\u2713 All pages downloaded for offline';
+        }
+    }
 }
 
 // ============================================================
