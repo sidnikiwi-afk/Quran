@@ -12,14 +12,16 @@ A Progressive Web App for reading the South African 13-line Quran (Waterval Isla
 - Extracted and split into 847 individual mushaf pages
 - Converted to 3-tier WebP:
   - **Thumb** (~3KB each, 3.3MB total) — blur placeholder
-  - **Medium** (~92KB each, 78MB total) — default view, committed to git
-  - **High** (~194KB each, 164MB total) — zoom view, gitignored (available locally)
+  - **Medium** (~92KB each, 78MB total) — legacy tier (still in git, no longer used)
+  - **High** (~106KB each, 90MB total) — **default view**, lossless WebP at full 2985x3900 native resolution, committed to git
+- High-res images extracted at 600 DPI from source PDF, lossless WebP compression
+- Lossless WebP is paradoxically smaller than lossy for Arabic text/line art
 
 ## Navigation
 - **Swipe left/right** to turn pages (RTL: swipe left = forward)
 - **Tap left/right edges** (25% zones) to go forward/back
 - **Tap middle** (50%) to toggle menu
-- **Pinch to zoom** — loads high-res tier above 1.5x, clamp 1x-4x
+- **Pinch to zoom** — clamp 1x-4x (high-res is now default, no tier swap needed)
 - **Pan** when zoomed (single finger drag)
 - **Double-tap** to reset zoom
 - **Haptic feedback** on page turn (`navigator.vibrate(10)`)
@@ -66,14 +68,14 @@ A Progressive Web App for reading the South African 13-line Quran (Waterval Isla
 ## Visual Polish
 - **Juz tab** on right edge — shows current juz in Arabic, positioned vertically by juz number (10%-90% range), auto-hides after 3s
 - **Page indicator** — bottom center pill with backdrop blur, auto-hides after 2s
-- **Progressive loading** — thumb with blur(10px) + scale(1.05), swap to medium on load
+- **Progressive loading** — thumb with blur(10px) + scale(1.05), swap to high-res on load
 - **Page transitions** — slideLeft/slideRight 200ms CSS animations
 - **Menu** — smooth slide-in 300ms, backdrop blur, capped at 85vw on small screens
 
 ## Performance
 - **On-demand loading** — current page +/- 5 preloaded
 - **Download all for offline** — service worker batches of 10, progress reporting via postMessage
-- **3-tier WebP** — thumb for instant placeholder, medium for reading, high for zoom
+- **3-tier WebP** — thumb for instant placeholder, high-res lossless for reading (106KB avg, smaller than lossy)
 - **Cache-first** for images, network-first for app shell
 - **Vanilla JS** — no frameworks, ~1100 lines total
 - **GPU-accelerated** — `will-change: transform` on page container
@@ -99,8 +101,8 @@ Quran/
 │   ├── icons/              # App icons (192, 512)
 │   └── images/pages/
 │       ├── thumb/          # 847 WebP ~3KB each
-│       ├── medium/         # 847 WebP ~92KB each (in git)
-│       └── high/           # 847 WebP ~194KB each (gitignored)
+│       ├── medium/         # 847 WebP ~92KB each (legacy, still in git)
+│       └── high/           # 847 lossless WebP ~106KB each (default, in git)
 ├── scripts/
 │   └── extract-pages.sh    # PDF to WebP extraction script
 ├── assets/source/          # Source PDF (gitignored)
@@ -137,9 +139,8 @@ Quran/
 - Page mappings specific to 13-line SA mushaf (different from 15-line Madinah)
 
 ## Known Limitations
-- Medium tier images (1000px wide) appear slightly blurry on 3x Retina iPhone displays
-- High-res images exist locally but are gitignored (164MB too large for reliable GitHub Pages serving)
 - Page transitions use CSS animation (instant swap with slide effect) rather than interactive finger-following swipe
+- RTL direction (`<html dir="rtl">`) conflicts with CSS translateX-based swipe track approaches
 
 ## Bug Fixes Applied
 1. **Markers misaligned** — markers layer now dynamically positioned over actual image rect using `getBoundingClientRect()`
@@ -152,8 +153,7 @@ Quran/
 8. **Dual page order wrong** — changed from `row-reverse` to `row` (HTML `dir=rtl` already reverses)
 
 ## Future Additions
-- Smooth interactive page swiping (page follows finger, next page visible during swipe)
-- Higher resolution default images (serve high-res via CDN or optimized hosting)
+- Smooth interactive page swiping (page follows finger, next page visible during swipe — needs RTL-safe approach)
 - Audio recitation playback (Bandar Baleelah files already in repo)
 - Real-time recitation tracking with mistake detection (Tarteel-style)
 - Translation overlay

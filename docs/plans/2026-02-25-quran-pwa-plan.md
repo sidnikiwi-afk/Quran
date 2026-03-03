@@ -37,16 +37,19 @@ All phases are complete. Below is the summary of what was built.
 7. Top of page unresponsive for markers — listener on `#reader` not `#page-container`
 8. Dual page order wrong — `row` not `row-reverse` (RTL already reverses)
 
+## Post-v1.0 Enhancements
+
+- **High-res lossless images as default** — re-extracted at 600 DPI from source PDF, converted to lossless WebP at full 2985x3900 native resolution. ~106KB per page, 90MB total (paradoxically smaller than lossy compression for Arabic text). Committed to git and deployed via GitHub Pages. Medium tier no longer used.
+
 ## Attempted but Reverted
 
-- **Smooth interactive page swiping** (3-slot swipe track) — broke layout due to RTL direction conflicts with 300%-wide translateX positioning. Reverted to CSS animation transitions.
-- **High-res images as default** — un-gitignored 164MB of high images, but reverted along with swipe track changes.
+- **Smooth interactive page swiping** (3-slot swipe track) — broke layout due to RTL direction conflicts with 300%-wide translateX positioning. `<html dir="rtl">` causes translateX to position from the right edge. Reverted to CSS animation transitions.
 
 ## Remaining Future Work
 
-- Smooth interactive page swiping (needs proper RTL-safe implementation)
-- Higher resolution default images (CDN or optimized hosting)
+- Smooth interactive page swiping (needs RTL-safe implementation — previous attempt with 3-slot swipe track failed due to dir="rtl" conflicts)
 - Audio recitation playback (Bandar Baleelah MP3s already in repo)
 - Real-time recitation tracking with mistake detection (Tarteel-style)
 - Translation overlay
 - Verify remaining interpolated surah/juz page numbers (61 of 114 surahs, 27 of 30 juz)
+- Remove legacy medium tier images (no longer used, still in git)
