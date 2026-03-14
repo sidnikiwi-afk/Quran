@@ -295,9 +295,13 @@ function preloadAdjacent(page) {
 // Navigation (swipe, tap, zoom)
 // ============================================================
 function setupNavigation() {
-    // --- Swipe detection ---
+    // --- Swipe state ---
     let touchStartX = 0, touchStartY = 0, touchStartTime = 0;
     let isSwiping = false;
+    let swipeDirectionLocked = false;
+    let incomingWrapper = null;
+    let incomingTargetPage = 0;
+    let swipeAnimating = false;
 
     // --- Pinch zoom state ---
     let initialPinchDist = 0;
@@ -327,15 +331,51 @@ function setupNavigation() {
         state.isZoomed = false;
         state.zoomLevel = 1;
         dom.pageImg.style.transform = '';
-        // Already using high-res by default
     }
 
-    // Touch events on #reader for swipe
+    function cleanupSwipe() {
+        if (incomingWrapper) {
+            incomingWrapper.remove();
+            incomingWrapper = null;
+        }
+        dom.pageContainer.style.transition = '';
+        dom.pageContainer.style.transform = '';
+        isSwiping = false;
+        swipeDirectionLocked = false;
+        incomingTargetPage = 0;
+        swipeAnimating = false;
+    }
+
+    function createIncomingPage(targetPage) {
+        if (targetPage < 1 || targetPage > state.totalPages) return;
+        incomingTargetPage = targetPage;
+
+        incomingWrapper = document.createElement('div');
+        incomingWrapper.className = 'swipe-incoming';
+
+        const img = document.createElement('img');
+        img.draggable = false;
+        img.alt = 'Quran page';
+
+        // Load thumb as placeholder, then swap to high-res
+        img.src = getImageUrl(targetPage, 'thumb');
+        const hiImg = new Image();
+        hiImg.src = getImageUrl(targetPage, 'high');
+        hiImg.onload = () => {
+            if (incomingWrapper) img.src = hiImg.src;
+        };
+
+        incomingWrapper.appendChild(img);
+        dom.reader.insertBefore(incomingWrapper, dom.pageContainer);
+    }
+
+    // Touch events on #reader
     dom.reader.addEventListener('touchstart', (e) => {
+        if (swipeAnimating) return;
         if (e.touches.length === 2) {
-            // Pinch start
             isPinching = true;
             isSwiping = false;
+            cleanupSwipe();
             initialPinchDist = getDistance(e.touches[0], e.touches[1]);
             return;
         }
@@ -345,8 +385,8 @@ function setupNavigation() {
             touchStartY = e.touches[0].clientY;
             touchStartTime = Date.now();
             isSwiping = false;
+            swipeDirectionLocked = false;
 
-            // Pan start when zoomed
             if (currentScale > 1) {
                 panStartX = e.touches[0].clientX;
                 panStartY = e.touches[0].clientY;
@@ -357,8 +397,8 @@ function setupNavigation() {
     }, { passive: true });
 
     dom.reader.addEventListener('touchmove', (e) => {
+        if (swipeAnimating) return;
         if (e.touches.length === 2 && isPinching) {
-            // Pinch zoom
             e.preventDefault();
             const newDist = getDistance(e.touches[0], e.touches[1]);
             let scale = (newDist / initialPinchDist) * currentScale;
@@ -368,7 +408,6 @@ function setupNavigation() {
             return;
         }
         if (e.touches.length === 1) {
-            // Pan when zoomed
             if (currentScale > 1) {
                 e.preventDefault();
                 const dx = e.touches[0].clientX - panStartX;
@@ -378,43 +417,137 @@ function setupNavigation() {
                 applyTransform();
                 return;
             }
-            // Swipe detection
+
             const dx = e.touches[0].clientX - touchStartX;
-            if (Math.abs(dx) > 10) {
+            const dy = e.touches[0].clientY - touchStartY;
+
+            // Lock direction on first significant movement
+            if (!swipeDirectionLocked && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+                if (Math.abs(dy) > Math.abs(dx)) {
+                    // Vertical movement — don't intercept
+                    return;
+                }
+                swipeDirectionLocked = true;
                 isSwiping = true;
+
+                // Only do interactive swipe in single-page mode
+                if (!_isDualActive) {
+                    const step = 1;
+                    const targetPage = dx < 0
+                        ? state.currentPage + step  // swipe left = forward
+                        : state.currentPage - step; // swipe right = backward
+
+                    dom.pageContainer.style.transition = 'none';
+                    createIncomingPage(targetPage);
+                }
+            }
+
+            if (isSwiping) {
                 e.preventDefault();
+
+                if (_isDualActive) {
+                    // Dual-page: no interactive swipe, just track for threshold
+                    return;
+                }
+
+                let adjustedDx = dx;
+                if (!incomingWrapper) {
+                    // No valid target page — rubber band
+                    adjustedDx = dx * 0.3;
+                } else {
+                    // Clamp: don't allow dragging past start in wrong direction
+                    if (incomingTargetPage > state.currentPage) {
+                        adjustedDx = Math.min(0, dx);
+                    } else {
+                        adjustedDx = Math.max(0, dx);
+                    }
+                }
+
+                dom.pageContainer.style.transform = `translateX(${adjustedDx}px)`;
             }
         }
     }, { passive: false });
 
     dom.reader.addEventListener('touchend', (e) => {
+        if (swipeAnimating) return;
         if (isPinching && e.touches.length < 2) {
-            // Pinch ended — finalize scale
             const finalScale = state.zoomLevel;
             currentScale = Math.max(1, Math.min(finalScale, 4));
             state.isZoomed = currentScale > 1;
-
-            // Already using high-res by default
-            if (currentScale <= 1.05) {
-                resetZoom();
-            }
+            if (currentScale <= 1.05) resetZoom();
             applyTransform();
             isPinching = false;
             return;
         }
 
         if (isSwiping) {
-            const deltaX = e.changedTouches[0].clientX - touchStartX;
-            if (Math.abs(deltaX) > SWIPE_THRESHOLD) {
-                if (deltaX < 0) {
-                    // Swipe left = next page (RTL forward)
-                    nextPage();
-                } else {
-                    // Swipe right = previous page (RTL back)
-                    prevPage();
+            const rawDeltaX = e.changedTouches[0].clientX - touchStartX;
+
+            // Dual-page mode: fall back to old threshold-based behavior
+            if (_isDualActive) {
+                if (Math.abs(rawDeltaX) > SWIPE_THRESHOLD) {
+                    if (rawDeltaX < 0) nextPage();
+                    else prevPage();
                 }
+                isSwiping = false;
+                swipeDirectionLocked = false;
+                return;
             }
-            isSwiping = false;
+
+            // Clamp delta same way as touchmove
+            let deltaX = rawDeltaX;
+            if (incomingWrapper && incomingTargetPage > state.currentPage) {
+                deltaX = Math.min(0, rawDeltaX);
+            } else if (incomingWrapper && incomingTargetPage < state.currentPage) {
+                deltaX = Math.max(0, rawDeltaX);
+            } else if (!incomingWrapper) {
+                deltaX = rawDeltaX * 0.3;
+            }
+
+            const readerWidth = dom.reader.offsetWidth;
+            const elapsed = Date.now() - touchStartTime;
+            const velocity = Math.abs(deltaX) / Math.max(elapsed, 1);
+            const shouldComplete = incomingWrapper &&
+                incomingTargetPage >= 1 && incomingTargetPage <= state.totalPages &&
+                (Math.abs(deltaX) > readerWidth * 0.25 || velocity > 0.4);
+
+            if (shouldComplete) {
+                // Animate current page off-screen, revealing incoming
+                swipeAnimating = true;
+                const direction = deltaX < 0 ? -1 : 1;
+                dom.pageContainer.style.transition = 'transform 250ms ease-out';
+                dom.pageContainer.style.transform = `translateX(${direction * readerWidth}px)`;
+
+                const targetPage = incomingTargetPage;
+                dom.pageContainer.addEventListener('transitionend', function onEnd() {
+                    dom.pageContainer.removeEventListener('transitionend', onEnd);
+                    cleanupSwipe();
+                    renderPage(targetPage);
+                    navigator.vibrate?.(10);
+                }, { once: true });
+
+                // Fallback timeout in case transitionend doesn't fire
+                setTimeout(() => {
+                    if (swipeAnimating) {
+                        cleanupSwipe();
+                        renderPage(targetPage);
+                    }
+                }, 300);
+            } else {
+                // Snap back
+                swipeAnimating = true;
+                dom.pageContainer.style.transition = 'transform 200ms ease-out';
+                dom.pageContainer.style.transform = 'translateX(0)';
+
+                dom.pageContainer.addEventListener('transitionend', function onEnd() {
+                    dom.pageContainer.removeEventListener('transitionend', onEnd);
+                    cleanupSwipe();
+                }, { once: true });
+
+                setTimeout(() => {
+                    if (swipeAnimating) cleanupSwipe();
+                }, 250);
+            }
             return;
         }
 
