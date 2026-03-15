@@ -989,7 +989,7 @@ function setTheme(theme) {
     // Update theme-color meta tag
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (metaThemeColor) {
-        metaThemeColor.setAttribute('content', theme === 'dark' ? '#1a1a1a' : '#f5f0e8');
+        metaThemeColor.setAttribute('content', theme === 'dark' ? '#1a1a1a' : '#ffffff');
     }
     // Update toggle if it exists
     const toggle = document.getElementById('theme-toggle');
