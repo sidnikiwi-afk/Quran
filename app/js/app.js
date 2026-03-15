@@ -468,9 +468,11 @@ function setupNavigation() {
                 } else {
                     // Clamp: don't allow dragging past start in wrong direction
                     if (incomingTargetPage > state.currentPage) {
-                        adjustedDx = Math.min(0, dx);
-                    } else {
+                        // Swiping right (forward) — only allow positive dx
                         adjustedDx = Math.max(0, dx);
+                    } else {
+                        // Swiping left (backward) — only allow negative dx
+                        adjustedDx = Math.min(0, dx);
                     }
                 }
 
@@ -508,9 +510,9 @@ function setupNavigation() {
             // Clamp delta same way as touchmove
             let deltaX = rawDeltaX;
             if (incomingWrapper && incomingTargetPage > state.currentPage) {
-                deltaX = Math.min(0, rawDeltaX);
+                deltaX = Math.max(0, rawDeltaX); // forward = positive only
             } else if (incomingWrapper && incomingTargetPage < state.currentPage) {
-                deltaX = Math.max(0, rawDeltaX);
+                deltaX = Math.min(0, rawDeltaX); // backward = negative only
             } else if (!incomingWrapper) {
                 deltaX = rawDeltaX * 0.3;
             }
@@ -616,6 +618,14 @@ function setupNavigation() {
                 break;
             case 'Escape':
                 closeMenu();
+                break;
+            case 'AudioVolumeUp':
+                e.preventDefault();
+                nextPage();
+                break;
+            case 'AudioVolumeDown':
+                e.preventDefault();
+                prevPage();
                 break;
         }
     });
