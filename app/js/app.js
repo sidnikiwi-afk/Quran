@@ -148,17 +148,28 @@ function getImageUrl(page, tier = 'medium') {
 let _indicatorTimer = null;
 let _juzTabTimer = null;
 
-function renderPage(page) {
+function renderPage(page, skipBlur) {
     // 1. Clamp page
     page = Math.max(1, Math.min(page, state.totalPages));
     state.currentPage = page;
 
-    // 2. Load thumbnail as blurred placeholder
-    dom.pageImg.style.filter = 'blur(10px)';
-    dom.pageImg.style.transform = 'scale(1.05)';
-    dom.pageImg.src = getImageUrl(page, 'thumb');
+    // 2. Load image (skip blur if coming from a completed swipe)
+    if (skipBlur) {
+        // Image already set by swipe handler — just ensure high-res
+        dom.pageImg.style.filter = '';
+        dom.pageImg.style.transform = '';
+        const hiUrl = getImageUrl(page, 'high');
+        if (dom.pageImg.src !== hiUrl) {
+            dom.pageImg.src = hiUrl;
+        }
+    } else {
+        // Normal load: thumbnail placeholder with blur
+        dom.pageImg.style.filter = 'blur(10px)';
+        dom.pageImg.style.transform = 'scale(1.05)';
+        dom.pageImg.src = getImageUrl(page, 'thumb');
+    }
 
-    // 3. Load medium image and swap when ready
+    // 3. Load high-res image and swap when ready
     const medImg = new Image();
     medImg.src = getImageUrl(page, 'high');
     medImg.onload = () => {
@@ -433,9 +444,9 @@ function setupNavigation() {
                 // Only do interactive swipe in single-page mode
                 if (!_isDualActive) {
                     const step = 1;
-                    const targetPage = dx < 0
-                        ? state.currentPage + step  // swipe left = forward
-                        : state.currentPage - step; // swipe right = backward
+                    const targetPage = dx > 0
+                        ? state.currentPage + step  // swipe right = forward (like turning a book page)
+                        : state.currentPage - step; // swipe left = backward
 
                     dom.pageContainer.style.transition = 'none';
                     createIncomingPage(targetPage);
@@ -486,7 +497,7 @@ function setupNavigation() {
             // Dual-page mode: fall back to old threshold-based behavior
             if (_isDualActive) {
                 if (Math.abs(rawDeltaX) > SWIPE_THRESHOLD) {
-                    if (rawDeltaX < 0) nextPage();
+                    if (rawDeltaX > 0) nextPage();
                     else prevPage();
                 }
                 isSwiping = false;
@@ -519,20 +530,25 @@ function setupNavigation() {
                 dom.pageContainer.style.transform = `translateX(${direction * readerWidth}px)`;
 
                 const targetPage = incomingTargetPage;
-                dom.pageContainer.addEventListener('transitionend', function onEnd() {
-                    dom.pageContainer.removeEventListener('transitionend', onEnd);
+                const incomingImgSrc = incomingWrapper?.querySelector('img')?.src;
+
+                const finishSwipe = () => {
+                    if (!swipeAnimating) return;
+                    // Set main image to incoming image BEFORE cleanup to avoid flash
+                    if (incomingImgSrc) {
+                        dom.pageImg.src = incomingImgSrc;
+                        dom.pageImg.style.filter = '';
+                        dom.pageImg.style.transform = '';
+                    }
                     cleanupSwipe();
-                    renderPage(targetPage);
+                    renderPage(targetPage, true); // skipBlur = true
                     navigator.vibrate?.(10);
-                }, { once: true });
+                };
+
+                dom.pageContainer.addEventListener('transitionend', finishSwipe, { once: true });
 
                 // Fallback timeout in case transitionend doesn't fire
-                setTimeout(() => {
-                    if (swipeAnimating) {
-                        cleanupSwipe();
-                        renderPage(targetPage);
-                    }
-                }, 300);
+                setTimeout(finishSwipe, 300);
             } else {
                 // Snap back
                 swipeAnimating = true;
@@ -870,14 +886,22 @@ function setupMenu() {
         e.stopPropagation();
     });
 
-    // Swipe right on menu panel to close (RTL-friendly dismiss)
+    // Swipe right on menu panel to close (but not when scrolling juz pills or surah list)
     let menuTouchStartX = 0;
+    let menuTouchStartY = 0;
+    let menuTouchOnScrollable = false;
     dom.menuPanel.addEventListener('touchstart', (e) => {
         menuTouchStartX = e.touches[0].clientX;
+        menuTouchStartY = e.touches[0].clientY;
+        // Check if touch started on a horizontally scrollable element
+        menuTouchOnScrollable = !!e.target.closest('.juz-pills, .surah-list');
     }, { passive: true });
     dom.menuPanel.addEventListener('touchend', (e) => {
+        if (menuTouchOnScrollable) return; // Don't close when scrolling pills
         const dx = e.changedTouches[0].clientX - menuTouchStartX;
-        if (dx > 80) closeMenu(); // Swipe right > 80px = close
+        const dy = e.changedTouches[0].clientY - menuTouchStartY;
+        // Only close if horizontal swipe right and not mostly vertical
+        if (dx > 80 && Math.abs(dx) > Math.abs(dy) * 2) closeMenu();
     }, { passive: true });
 }
 
