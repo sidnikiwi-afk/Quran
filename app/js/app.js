@@ -55,6 +55,7 @@ async function init() {
     setupMarkers();
     setupDualPage();
     setupWakeLock();
+    initAudio();
     registerServiceWorker();
 }
 
@@ -68,6 +69,7 @@ function cacheDom() {
         tapRight: document.getElementById('tap-right'),
         pageIndicator: document.getElementById('page-indicator'),
         markersLayer: document.getElementById('markers-layer'),
+        audioBar: document.getElementById('audio-bar'),
         menuBtn: document.getElementById('menu-btn'),
         menuOverlay: document.getElementById('menu-overlay'),
         menuPanel: document.getElementById('menu-panel'),
@@ -292,6 +294,135 @@ function pageForAyah(index, surah, ayah) {
     const map = index && index.ayahToPage;
     if (!map) return null;
     return map[surah + ':' + ayah] || null;
+}
+
+// ============================================================
+// Audio — Tier 1: continuous per-surah recitation (Bandar Baleelah)
+// Streams from the Quran Foundation CDN (no bundling). Surah-level page-follow.
+// ============================================================
+const AUDIO_BASE = 'https://download.quranicaudio.com/quran/bandar_baleela/complete/';
+const audioState = { surah: null, followPages: true };
+let _audioEl = null;
+
+function audioSurahUrl(n) {
+    return AUDIO_BASE + String(n).padStart(3, '0') + '.mp3';
+}
+
+function surahById(n) {
+    const list = state.metadata && state.metadata.surahs;
+    return list ? list.find(s => s.number === n) : null;
+}
+
+function formatTime(s) {
+    if (!isFinite(s) || s < 0) s = 0;
+    const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+    return m + ':' + String(sec).padStart(2, '0');
+}
+
+function showAudioBar(show) {
+    if (!dom.audioBar) return;
+    if (show) dom.audioBar.removeAttribute('hidden');
+    else dom.audioBar.setAttribute('hidden', '');
+}
+
+function playSurahAudio(n) {
+    if (!_audioEl || n < 1 || n > 114) return;
+    audioState.surah = n;
+    _audioEl.src = audioSurahUrl(n);
+    showAudioBar(true);
+    updateAudioMeta();
+    const p = _audioEl.play();
+    if (p && p.catch) p.catch(() => updatePlayPauseIcon()); // autoplay/load errors
+    // Surah-level page follow (surah starts are exact)
+    if (audioState.followPages) {
+        const s = surahById(n);
+        if (s && s.startPage !== state.currentPage) goToPage(s.startPage);
+    }
+}
+
+function playCurrentSurah() {
+    const s = findCurrentSurah(state.currentPage);
+    playSurahAudio(s ? s.number : 1);
+}
+
+function toggleAudio() {
+    if (!_audioEl) return;
+    if (!audioState.surah) { playCurrentSurah(); return; }
+    if (_audioEl.paused) {
+        const p = _audioEl.play();
+        if (p && p.catch) p.catch(() => {});
+    } else {
+        _audioEl.pause();
+    }
+}
+
+function audioStep(delta) {
+    const cur = audioState.surah || 1;
+    const next = cur + delta;
+    if (next >= 1 && next <= 114) playSurahAudio(next);
+}
+
+function updatePlayPauseIcon() {
+    const btn = document.getElementById('audio-playpause');
+    if (!btn || !_audioEl) return;
+    const playing = !_audioEl.paused && !_audioEl.ended;
+    btn.innerHTML = playing ? '&#10073;&#10073;' : '&#9654;';
+    btn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+}
+
+function updateAudioMeta() {
+    const s = surahById(audioState.surah);
+    const titleEl = document.getElementById('audio-title');
+    if (titleEl && s) titleEl.textContent = `${s.number}. ${s.name}`;
+    if ('mediaSession' in navigator && s) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: `${s.number}. ${s.name}`,
+            artist: 'Bandar Baleelah',
+            album: 'Quran',
+        });
+    }
+}
+
+function initAudio() {
+    _audioEl = document.getElementById('audio-el');
+    if (!_audioEl) return;
+    const seek = document.getElementById('audio-seek');
+    const curEl = document.getElementById('audio-cur');
+    const durEl = document.getElementById('audio-dur');
+
+    _audioEl.addEventListener('play', updatePlayPauseIcon);
+    _audioEl.addEventListener('pause', updatePlayPauseIcon);
+    _audioEl.addEventListener('ended', () => audioStep(1)); // continuous play
+    _audioEl.addEventListener('loadedmetadata', () => {
+        if (durEl) durEl.textContent = formatTime(_audioEl.duration);
+    });
+    _audioEl.addEventListener('timeupdate', () => {
+        if (!_audioEl.duration) return;
+        if (curEl) curEl.textContent = formatTime(_audioEl.currentTime);
+        if (seek && !seek._dragging) seek.value = (_audioEl.currentTime / _audioEl.duration) * 100;
+    });
+    if (seek) {
+        seek.addEventListener('input', () => { seek._dragging = true; });
+        seek.addEventListener('change', () => {
+            if (_audioEl.duration) _audioEl.currentTime = (seek.value / 100) * _audioEl.duration;
+            seek._dragging = false;
+        });
+    }
+    document.getElementById('audio-playpause').addEventListener('click', toggleAudio);
+    document.getElementById('audio-prev').addEventListener('click', () => audioStep(-1));
+    document.getElementById('audio-next').addEventListener('click', () => audioStep(1));
+    document.getElementById('audio-close').addEventListener('click', () => {
+        _audioEl.pause();
+        showAudioBar(false);
+    });
+
+    if ('mediaSession' in navigator) {
+        const ms = navigator.mediaSession;
+        ms.setActionHandler('play', () => toggleAudio());
+        ms.setActionHandler('pause', () => toggleAudio());
+        ms.setActionHandler('nexttrack', () => audioStep(1));
+        ms.setActionHandler('previoustrack', () => audioStep(-1));
+    }
 }
 
 function showPageIndicator(page) {
@@ -802,6 +933,23 @@ function setupMenu() {
             </div>
         </div>
 
+        <!-- Audio -->
+        <div class="menu-section">
+            <div class="menu-section-title collapsible" data-target="audio-content">Audio <span class="collapse-arrow">&#9660;</span></div>
+            <div id="audio-content" class="collapsible-content">
+                <button id="audio-play-current"
+                    style="width:100%;padding:11px;border:none;border-radius:var(--btn-radius);background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:10px;">&#9654; Play recitation</button>
+                <div style="text-align:center;font-size:12px;color:#888;margin-bottom:10px;">Reciter: Bandar Baleelah</div>
+                <div class="setting-row">
+                    <span class="setting-label">Follow pages</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="audio-follow-toggle" ${audioState.followPages ? 'checked' : ''}>
+                        <span class="toggle-track"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
         <!-- Settings -->
         <div class="menu-section">
             <div class="menu-section-title collapsible" data-target="settings-content">Settings <span class="collapse-arrow">&#9660;</span></div>
@@ -947,6 +1095,15 @@ function setupMenu() {
     [ayahSurahInput, ayahAyahInput].forEach(el => el.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') doAyahJump();
     }));
+
+    // Audio
+    document.getElementById('audio-play-current').addEventListener('click', () => {
+        playCurrentSurah();
+        closeMenu();
+    });
+    document.getElementById('audio-follow-toggle').addEventListener('change', (e) => {
+        audioState.followPages = e.target.checked;
+    });
 
     // Reading progress
     if (!_visitedSet) _visitedSet = new Set(state.progress.visited);

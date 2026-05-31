@@ -852,3 +852,79 @@ body.dual-page #page-img-2 {
         width: 380px;
     }
 }
+
+/* ============================================================
+   Audio player (Tier 1)
+   ============================================================ */
+#audio-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    background: var(--menu-bg);
+    border-top: 1px solid var(--menu-border);
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.12);
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+    color: var(--menu-text);
+}
+#audio-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+#audio-bar button {
+    border: none;
+    background: transparent;
+    color: var(--menu-text);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 6px;
+    line-height: 1;
+}
+#audio-playpause {
+    background: var(--accent);
+    color: #fff;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+#audio-info {
+    flex: 1;
+    min-width: 0;
+}
+#audio-title {
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#audio-reciter {
+    font-size: 11px;
+    color: #888;
+}
+#audio-close {
+    font-size: 15px;
+    opacity: 0.6;
+}
+#audio-seek-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+#audio-seek {
+    flex: 1;
+    accent-color: var(--accent);
+}
+#audio-seek-row span {
+    font-size: 11px;
+    color: #888;
+    min-width: 34px;
+    text-align: center;
+}

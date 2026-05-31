@@ -42,6 +42,26 @@
         </div>
     </div>
 
+    <!-- Audio player (Tier 1: continuous per-surah recitation) -->
+    <div id="audio-bar" hidden>
+        <div id="audio-row">
+            <button id="audio-prev" aria-label="Previous surah">&#9198;</button>
+            <button id="audio-playpause" aria-label="Play">&#9654;</button>
+            <button id="audio-next" aria-label="Next surah">&#9197;</button>
+            <div id="audio-info">
+                <div id="audio-title">Recitation</div>
+                <div id="audio-reciter">Bandar Baleelah</div>
+            </div>
+            <button id="audio-close" aria-label="Close player">&#10005;</button>
+        </div>
+        <div id="audio-seek-row">
+            <span id="audio-cur">0:00</span>
+            <input type="range" id="audio-seek" min="0" max="100" value="0" step="0.1" aria-label="Seek">
+            <span id="audio-dur">0:00</span>
+        </div>
+    </div>
+    <audio id="audio-el" preload="none" crossorigin="anonymous"></audio>
+
     <script src="js/app.js"></script>
 </body>
 </html>
