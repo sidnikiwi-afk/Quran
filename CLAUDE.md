@@ -1,0 +1,87 @@
+# CLAUDE.md — Quran PWA reader
+
+13-line Quran reader (SA Waterval Islamic Institute / Taj Company edition) as an
+offline-first PWA. Vanilla JS, no framework, no build step.
+
+- **Live:** https://sidnikiwi-afk.github.io/Quran/
+- **Repo:** `sidnikiwi-afk/Quran` (public)
+- **Deploy:** GitHub Pages via `.github/workflows/deploy.yml` — auto-deploys the
+  `app/` folder on every push to `master` (~1 min). Verify a run with
+  `gh run list --limit 1`.
+
+## Layout
+```
+app/
+  index.html            # shell
+  css/styles.css
+  js/app.js             # all app logic (~1400 lines, single file)
+  sw.js                 # service worker (versioned cache + auto-update)
+  manifest.json
+  data/
+    metadata.json       # mushaf info, surahs[], juz[] (startPage = IMAGE number)
+    page-ayah-index.json# ayah<->page index (see below)
+  images/pages/{thumb,medium,high}/<n>.webp   # 847 page images per tier
+```
+
+## Page numbering (important)
+- The app navigates by **image number** 1–847. `getImageUrl()` uses the page
+  number directly as the file name (`images/pages/<tier>/<page>.webp`).
+- The **printed** Arabic page number on each scan = **image number + 1** (the
+  cover is image 1). So image 28 shows printed "٢٩". Don't conflate the two.
+- `metadata.json` `juz[].startPage` and `surahs[].startPage` are **image
+  numbers**. The QUL ayah-index `page` values are also image numbers (offset 0).
+
+## Data: ayah <-> page index (`data/page-ayah-index.json`)
+- Built 2026-05-31 from **QUL (Quranic Universal Library, qul.tarteel.ai)**:
+  Indopak 13-line **Taj Company** layout (resource 313) joined with the QUL
+  **Indopak word script** (resource 55, 83,668 words).
+- **Validated exact match** to our scan (offset 0), confirmed at ayah level:
+  `2:142→28, 2:253→56, 17:1→392, 21:1→448, 67:1→786, 78:1→818, 1:1→1, 2:1→2`.
+- Format: `pages{ "<page>": [firstSurah, firstAyah, lastSurah, lastAyah] }` and
+  `ayahToPage{ "<surah>:<ayah>": <page> }` (page where the ayah begins).
+- Used by **Go to Ayah** (Surah:Ayah jump). Loaded lazily; also in the SW shell
+  for offline use. Unblocks audio auto-turn, search, translation panel.
+- QUL data licence/attribution still TODO before any public re-distribution.
+- A free QUL account (sidni.kiwi@gmail.com) was created to download the gated
+  datasets; download path pattern: `/resources/<type>/<hash>/download` → zip → DB.
+
+## Service worker discipline (read before editing assets)
+- `sw.js` has `CACHE_NAME = 'quran-vN'`. **Bump N on every change to app.js /
+  css / index.html / data files**, or clients keep serving the stale cache.
+  History so far reached `quran-v7`.
+- `SHELL_FILES` is precached on install; app shell is network-first, page images
+  are cache-first. Auto-update is wired in `registerServiceWorker()`: it calls
+  `reg.update()` on load / hourly / on focus and reloads once when a new SW takes
+  control (guarded so it doesn't reload on first install). Saved `currentPage`
+  makes the reload seamless.
+
+## State / storage
+- All persisted state is one localStorage key `quran-state`
+  (`loadState`/`saveState`). `schemaVersion: 2`. Keep types **JSON-safe** (e.g.
+  `progress.visited` is an array, not a Set).
+- Holds: currentPage, theme, brightness, keepAwake, dualPage, bookmarks[],
+  markers{}, progress{visited[], khatms[]}.
+
+## Features (current)
+Already present: page swipe/tap nav, surah list, juz pills, **Go to Page**, dark
+mode (CSS invert on page images) + brightness + keep-awake, dual-page, bookmarks,
+page markers/notes, **Download all pages** (offline).
+Added in the 2026-05-31 upgrade pass:
+- **Reading Progress & Khatm tracker** — visited %, bar, Resume / Complete-Khatm
+  / Reset (menu “Reading Progress”).
+- **Go to Ayah** — Surah:Ayah jump via the ayah-index.
+
+## Upgrade roadmap
+Tracked on the Hermes kanban board **`quran`** (http://127.0.0.1:9119/kanban →
+"Quran"). Cards refined by Claude Code + a Codex scoping review. Agreed build
+order lives as a comment on the "[Foundation] storage schema" card. Remaining
+big items: Audio (multi-reciter, phased; Bandar Baleelah quarter-Juz files are in
+`Bandar Baleelah/`, everyayah per-ayah for precise mode), bookmark export/import,
+ayah text search, Hifz mode, translation panel (needs licence clearance).
+
+## Gotchas
+- Don't auto-dark the **page image** from `prefers-color-scheme`; invert is
+  opt-in and needs visual QA on real scans (Codex flag).
+- Page-level index does NOT give on-image ayah **regions** (x/y) — no tap-on-ayah
+  highlight without separate geometry data.
+- Commit/push only when asked; this is a personal project with few users.
