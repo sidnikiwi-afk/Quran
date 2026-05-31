@@ -300,12 +300,35 @@ function pageForAyah(index, surah, ayah) {
 // Audio — Tier 1: continuous per-surah recitation (Bandar Baleelah)
 // Streams from the Quran Foundation CDN (no bundling). Surah-level page-follow.
 // ============================================================
-const AUDIO_BASE = 'https://download.quranicaudio.com/quran/bandar_baleela/complete/';
-const audioState = { surah: null, followPages: true };
+const SURAH_AUDIO_BASE = 'https://download.quranicaudio.com/quran/bandar_baleela/complete/';
+const EVERYAYAH_BASE = 'https://everyayah.com/data/';
+// Ayahs per surah (Hafs, 6236 total) — for ayah-by-ayah sequencing.
+const AYAH_COUNTS = [7,286,200,176,120,165,206,75,129,109,123,111,43,52,99,128,111,110,98,135,112,78,118,64,77,227,93,88,69,60,34,30,73,54,45,83,182,88,75,85,54,53,89,59,37,35,38,29,18,45,60,49,62,55,78,96,29,22,24,13,14,11,11,18,12,12,30,52,52,44,28,28,20,56,40,31,50,40,46,42,29,19,36,25,22,17,19,26,30,20,15,21,11,8,8,19,5,8,8,11,11,8,3,9,5,4,7,3,6,3,5,4,5,6];
+// Tier 2 per-ayah reciters (everyayah.com). Bandar Baleelah is NOT on per-ayah sources.
+const AYAH_RECITERS = [
+    { id: 'Alafasy_128kbps', name: 'Mishary Alafasy' },
+    { id: 'Husary_128kbps', name: 'Mahmoud Al-Husary' },
+    { id: 'Abu_Bakr_Ash-Shaatree_128kbps', name: 'Abu Bakr Ash-Shaatree' },
+    { id: 'Minshawy_Murattal_128kbps', name: 'Al-Minshawi (Murattal)' },
+    { id: 'Abdurrahmaan_As-Sudais_192kbps', name: 'Abdurrahman As-Sudais' },
+];
+// mode: 'surah' (Tier 1, Bandar Baleelah whole-surah) | 'ayah' (Tier 2, per-ayah)
+const audioState = { mode: 'surah', surah: null, ayah: null, reciter: 'Alafasy_128kbps', followPages: true, repeat: false };
 let _audioEl = null;
 
-function audioSurahUrl(n) {
-    return AUDIO_BASE + String(n).padStart(3, '0') + '.mp3';
+const pad3 = (n) => String(n).padStart(3, '0');
+function audioSurahUrl(n) { return SURAH_AUDIO_BASE + pad3(n) + '.mp3'; }
+function ayahAudioUrl(s, a) { return EVERYAYAH_BASE + audioState.reciter + '/' + pad3(s) + pad3(a) + '.mp3'; }
+
+function nextAyahPos(s, a) {
+    if (a < AYAH_COUNTS[s - 1]) return [s, a + 1];
+    if (s < 114) return [s + 1, 1];
+    return null;
+}
+function prevAyahPos(s, a) {
+    if (a > 1) return [s, a - 1];
+    if (s > 1) return [s - 1, AYAH_COUNTS[s - 2]];
+    return null;
 }
 
 function surahById(n) {
@@ -325,15 +348,21 @@ function showAudioBar(show) {
     else dom.audioBar.setAttribute('hidden', '');
 }
 
+function _playEl() {
+    const p = _audioEl.play();
+    if (p && p.catch) p.catch(() => updatePlayPauseIcon());
+}
+
+// --- Tier 1: whole-surah (Bandar Baleelah) ---
 function playSurahAudio(n) {
     if (!_audioEl || n < 1 || n > 114) return;
+    audioState.mode = 'surah';
     audioState.surah = n;
+    audioState.ayah = null;
     _audioEl.src = audioSurahUrl(n);
     showAudioBar(true);
     updateAudioMeta();
-    const p = _audioEl.play();
-    if (p && p.catch) p.catch(() => updatePlayPauseIcon()); // autoplay/load errors
-    // Surah-level page follow (surah starts are exact)
+    _playEl();
     if (audioState.followPages) {
         const s = surahById(n);
         if (s && s.startPage !== state.currentPage) goToPage(s.startPage);
@@ -345,21 +374,60 @@ function playCurrentSurah() {
     playSurahAudio(s ? s.number : 1);
 }
 
-function toggleAudio() {
-    if (!_audioEl) return;
-    if (!audioState.surah) { playCurrentSurah(); return; }
-    if (_audioEl.paused) {
-        const p = _audioEl.play();
-        if (p && p.catch) p.catch(() => {});
-    } else {
-        _audioEl.pause();
+// --- Tier 2: ayah-by-ayah (everyayah), with page auto-turn ---
+function playAyahAudio(s, a) {
+    if (!_audioEl || s < 1 || s > 114 || a < 1 || a > AYAH_COUNTS[s - 1]) return;
+    audioState.mode = 'ayah';
+    audioState.ayah = [s, a];
+    audioState.surah = null;
+    _audioEl.src = ayahAudioUrl(s, a);
+    showAudioBar(true);
+    updateAudioMeta();
+    _playEl();
+    if (audioState.followPages) {
+        loadAyahIndex().then(idx => {
+            const p = idx.ayahToPage[s + ':' + a];
+            if (p && p !== state.currentPage) goToPage(p);
+        }).catch(() => {});
     }
 }
 
+// Start playback for the current page in the active mode.
+function playCurrentInMode() {
+    if (audioState.mode === 'ayah') {
+        loadAyahIndex().then(idx => {
+            const pg = idx.pages[String(state.currentPage)];
+            if (pg) playAyahAudio(pg[0], pg[1]); else playAyahAudio(1, 1);
+        }).catch(() => playAyahAudio(1, 1));
+    } else {
+        playCurrentSurah();
+    }
+}
+
+function toggleAudio() {
+    if (!_audioEl) return;
+    if (!audioState.surah && !audioState.ayah) { playCurrentInMode(); return; }
+    if (_audioEl.paused) _playEl(); else _audioEl.pause();
+}
+
 function audioStep(delta) {
-    const cur = audioState.surah || 1;
-    const next = cur + delta;
-    if (next >= 1 && next <= 114) playSurahAudio(next);
+    if (audioState.mode === 'ayah') {
+        const cur = audioState.ayah || [1, 1];
+        const nx = delta > 0 ? nextAyahPos(cur[0], cur[1]) : prevAyahPos(cur[0], cur[1]);
+        if (nx) playAyahAudio(nx[0], nx[1]);
+    } else {
+        const next = (audioState.surah || 1) + delta;
+        if (next >= 1 && next <= 114) playSurahAudio(next);
+    }
+}
+
+// Called when a track ends: repeat the ayah, or advance (continuous).
+function audioEnded() {
+    if (audioState.mode === 'ayah' && audioState.repeat && audioState.ayah) {
+        playAyahAudio(audioState.ayah[0], audioState.ayah[1]);
+    } else {
+        audioStep(1);
+    }
 }
 
 function updatePlayPauseIcon() {
@@ -371,15 +439,23 @@ function updatePlayPauseIcon() {
 }
 
 function updateAudioMeta() {
-    const s = surahById(audioState.surah);
     const titleEl = document.getElementById('audio-title');
-    if (titleEl && s) titleEl.textContent = `${s.number}. ${s.name}`;
-    if ('mediaSession' in navigator && s) {
-        navigator.mediaSession.metadata = new MediaMetadata({
-            title: `${s.number}. ${s.name}`,
-            artist: 'Bandar Baleelah',
-            album: 'Quran',
-        });
+    const recEl = document.getElementById('audio-reciter');
+    let title = 'Recitation', artist = '';
+    if (audioState.mode === 'ayah' && audioState.ayah) {
+        const [s, a] = audioState.ayah;
+        const surah = surahById(s);
+        title = `${surah ? surah.name : 'Surah ' + s} ${s}:${a}`;
+        artist = (AYAH_RECITERS.find(r => r.id === audioState.reciter) || {}).name || '';
+    } else if (audioState.surah) {
+        const s = surahById(audioState.surah);
+        title = s ? `${s.number}. ${s.name}` : 'Surah ' + audioState.surah;
+        artist = 'Bandar Baleelah';
+    }
+    if (titleEl) titleEl.textContent = title;
+    if (recEl) recEl.textContent = artist;
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({ title, artist, album: 'Quran' });
     }
 }
 
@@ -392,7 +468,7 @@ function initAudio() {
 
     _audioEl.addEventListener('play', updatePlayPauseIcon);
     _audioEl.addEventListener('pause', updatePlayPauseIcon);
-    _audioEl.addEventListener('ended', () => audioStep(1)); // continuous play
+    _audioEl.addEventListener('ended', audioEnded); // continuous play / ayah repeat
     _audioEl.addEventListener('loadedmetadata', () => {
         if (durEl) durEl.textContent = formatTime(_audioEl.duration);
     });
@@ -937,13 +1013,26 @@ function setupMenu() {
         <div class="menu-section">
             <div class="menu-section-title collapsible" data-target="audio-content">Audio <span class="collapse-arrow">&#9660;</span></div>
             <div id="audio-content" class="collapsible-content">
+                <select id="audio-reciter-select"
+                    style="width:100%;padding:9px 10px;border:1.5px solid var(--menu-border);border-radius:var(--btn-radius);background:var(--menu-bg);color:var(--menu-text);font-size:14px;margin-bottom:10px;cursor:pointer;">
+                    <option value="surah">Bandar Baleelah — whole surah</option>
+                    <optgroup label="Ayah by ayah">
+                        ${AYAH_RECITERS.map(r => `<option value="ayah:${r.id}">${r.name}</option>`).join('')}
+                    </optgroup>
+                </select>
                 <button id="audio-play-current"
                     style="width:100%;padding:11px;border:none;border-radius:var(--btn-radius);background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:10px;">&#9654; Play recitation</button>
-                <div style="text-align:center;font-size:12px;color:#888;margin-bottom:10px;">Reciter: Bandar Baleelah</div>
                 <div class="setting-row">
                     <span class="setting-label">Follow pages</span>
                     <label class="toggle">
                         <input type="checkbox" id="audio-follow-toggle" ${audioState.followPages ? 'checked' : ''}>
+                        <span class="toggle-track"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <span class="setting-label">Repeat ayah</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="audio-repeat-toggle" ${audioState.repeat ? 'checked' : ''}>
                         <span class="toggle-track"></span>
                     </label>
                 </div>
@@ -1097,13 +1186,24 @@ function setupMenu() {
     }));
 
     // Audio
+    const recSel = document.getElementById('audio-reciter-select');
+    if (recSel) {
+        recSel.value = audioState.mode === 'ayah' ? 'ayah:' + audioState.reciter : 'surah';
+        recSel.addEventListener('change', (e) => {
+            const v = e.target.value;
+            if (v === 'surah') { audioState.mode = 'surah'; }
+            else { audioState.mode = 'ayah'; audioState.reciter = v.slice(5); }
+        });
+    }
     document.getElementById('audio-play-current').addEventListener('click', () => {
-        playCurrentSurah();
+        playCurrentInMode();
         closeMenu();
     });
     document.getElementById('audio-follow-toggle').addEventListener('change', (e) => {
         audioState.followPages = e.target.checked;
     });
+    const repToggle = document.getElementById('audio-repeat-toggle');
+    if (repToggle) repToggle.addEventListener('change', (e) => { audioState.repeat = e.target.checked; });
 
     // Reading progress
     if (!_visitedSet) _visitedSet = new Set(state.progress.visited);
