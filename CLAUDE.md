@@ -70,12 +70,21 @@ Added in the 2026-05-31 upgrade pass:
 - **Reading Progress & Khatm tracker** — visited %, bar, Resume / Complete-Khatm
   / Reset (menu “Reading Progress”).
 - **Go to Ayah** — Surah:Ayah jump via the ayah-index.
-- **Audio Tier 1** — continuous per-surah recitation (Bandar Baleelah), bottom
-  mini-player + MediaSession, surah-level page-follow. **Streams** from the QF
-  CDN `download.quranicaudio.com/quran/bandar_baleela/complete/<SSS>.mp3`
-  (CORS + range/seek) — NOT bundled (local `Bandar Baleelah/` quarter files are
-  ~750MB, too heavy for Pages). `initAudio()` + `playSurahAudio()` in app.js.
-  Tier 2 (per-ayah, highlight, ayah-Hifz) is now unblocked by the ayah-index.
+- **Audio** — one mini-player with two modes, switched by a reciter selector in
+  the Audio menu:
+  - **Tier 1 (whole surah, Bandar Baleelah)** — streams from the QF CDN
+    `download.quranicaudio.com/quran/bandar_baleela/complete/<SSS>.mp3`
+    (CORS + range/seek). NOT bundled (local `Bandar Baleelah/` quarter files are
+    ~750MB, too heavy for Pages).
+  - **Tier 2 (ayah-by-ayah)** — streams per-ayah from everyayah.com
+    `everyayah.com/data/<reciter>/<SSSAAA>.mp3` (Alafasy/Husary/Ash-Shaatree/
+    Minshawi/Sudais — Baleelah isn't on per-ayah sources). Continuous ayah
+    advance via `AYAH_COUNTS`, **page auto-turn** via `page-ayah-index.json`
+    (follow-pages toggle), per-ayah label, MediaSession, **Repeat-ayah** loop.
+  Key fns: `initAudio()`, `playSurahAudio()`, `playAyahAudio()`,
+  `audioStep()`/`audioEnded()` (mode-aware). Streaming only, no bulk cache.
+  Page-level index gives ayah sequencing + auto-turn but NOT on-image ayah
+  highlight (no x/y geometry) — out of scope.
 
 ## Upgrade roadmap
 Tracked on the Hermes kanban board **`quran`** (http://127.0.0.1:9119/kanban →
