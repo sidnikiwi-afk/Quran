@@ -12,6 +12,7 @@ const state = {
     dualPage: 'auto', // 'auto', 'on', 'off'
     bookmarks: [],
     markers: {},
+    progress: { visited: [], khatms: [] }, // visited: array of page numbers read this khatm; khatms: completed-khatm timestamps
     metadata: null,
     isMenuOpen: false,
     isZoomed: false,
@@ -93,6 +94,12 @@ function loadState() {
         if (saved.dualPage) state.dualPage = saved.dualPage;
         if (Array.isArray(saved.bookmarks)) state.bookmarks = saved.bookmarks;
         if (saved.markers && typeof saved.markers === 'object') state.markers = saved.markers;
+        if (saved.progress && Array.isArray(saved.progress.visited)) {
+            state.progress = {
+                visited: saved.progress.visited.filter(p => Number.isInteger(p) && p >= 1 && p <= state.totalPages),
+                khatms: Array.isArray(saved.progress.khatms) ? saved.progress.khatms : [],
+            };
+        }
     } catch (e) {
         console.warn('Failed to load state, using defaults:', e);
     }
@@ -104,6 +111,7 @@ function saveState() {
     _saveTimer = setTimeout(() => {
         try {
             const data = {
+                schemaVersion: 2,
                 currentPage: state.currentPage,
                 theme: state.theme,
                 brightness: state.brightness,
@@ -111,6 +119,7 @@ function saveState() {
                 dualPage: state.dualPage,
                 bookmarks: state.bookmarks,
                 markers: state.markers,
+                progress: state.progress,
             };
             localStorage.setItem('quran-state', JSON.stringify(data));
         } catch (e) {
@@ -210,11 +219,55 @@ function renderPage(page, skipBlur) {
     // 6. Preload adjacent pages
     preloadAdjacent(page);
 
-    // 8. Save state
+    // 8. Record reading progress + save state
+    recordVisited(page);
     saveState();
 
     // 9. Render markers for this page
     renderMarkers(page);
+}
+
+// ============================================================
+// Reading progress & Khatm tracker
+// ============================================================
+let _visitedSet = null;
+
+function recordVisited(page) {
+    if (!_visitedSet) _visitedSet = new Set(state.progress.visited);
+    if (_visitedSet.has(page)) return;
+    _visitedSet.add(page);
+    state.progress.visited.push(page);
+    updateProgressUI();
+}
+
+function progressStats() {
+    const total = state.totalPages;
+    const read = (_visitedSet ? _visitedSet.size : state.progress.visited.length);
+    const pct = total ? Math.round((read / total) * 100) : 0;
+    return { read, total, pct };
+}
+
+function updateProgressUI() {
+    const bar = document.getElementById('progress-bar-fill');
+    const label = document.getElementById('progress-label');
+    if (!bar && !label) return; // menu not built yet
+    const { read, total, pct } = progressStats();
+    if (bar) bar.style.width = pct + '%';
+    if (label) label.textContent = `${read} / ${total} pages — ${pct}%`;
+}
+
+function resetProgress() {
+    _visitedSet = new Set();
+    state.progress.visited = [];
+    saveState();
+    updateProgressUI();
+}
+
+function completeKhatm() {
+    // Archive the completed khatm and start a fresh one.
+    state.progress.khatms = state.progress.khatms || [];
+    state.progress.khatms.push(Date.now());
+    resetProgress();
 }
 
 function showPageIndicator(page) {
@@ -675,6 +728,26 @@ function setupMenu() {
             </div>
         </div>
 
+        <!-- Reading Progress -->
+        <div class="menu-section">
+            <div class="menu-section-title collapsible" data-target="progress-content">Reading Progress <span class="collapse-arrow">&#9660;</span></div>
+            <div id="progress-content" class="collapsible-content">
+                <div id="progress-label" style="text-align:center;font-size:13px;color:var(--menu-text);margin-bottom:8px;"></div>
+                <div style="height:8px;border-radius:4px;background:var(--menu-border);overflow:hidden;margin-bottom:12px;">
+                    <div id="progress-bar-fill" style="height:100%;width:0%;background:var(--accent);transition:width .3s;"></div>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button id="progress-resume-btn"
+                        style="flex:1;padding:9px;border:1.5px solid var(--accent);border-radius:var(--btn-radius);background:transparent;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;">Resume</button>
+                    <button id="progress-khatm-btn"
+                        style="flex:1;padding:9px;border:none;border-radius:var(--btn-radius);background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Complete Khatm</button>
+                    <button id="progress-reset-btn"
+                        style="flex:1;padding:9px;border:1.5px solid var(--menu-border);border-radius:var(--btn-radius);background:transparent;color:var(--menu-text);font-size:13px;cursor:pointer;">Reset</button>
+                </div>
+                <div id="progress-khatm-count" style="text-align:center;font-size:12px;color:#888;margin-top:8px;"></div>
+            </div>
+        </div>
+
         <!-- Page Jump -->
         <div class="menu-section">
             <div class="menu-section-title collapsible" data-target="page-jump-content">Go to Page <span class="collapse-arrow">&#9660;</span></div>
@@ -798,6 +871,31 @@ function setupMenu() {
     pageJumpBtn.addEventListener('click', doPageJump);
     pageJumpInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') doPageJump();
+    });
+
+    // Reading progress
+    if (!_visitedSet) _visitedSet = new Set(state.progress.visited);
+    updateProgressUI();
+    const khatmCountEl = document.getElementById('progress-khatm-count');
+    const n = (state.progress.khatms || []).length;
+    if (khatmCountEl) khatmCountEl.textContent = n ? `${n} khatm${n > 1 ? 's' : ''} completed` : '';
+    document.getElementById('progress-resume-btn').addEventListener('click', () => {
+        goToPage(state.currentPage);
+        closeMenu();
+    });
+    document.getElementById('progress-khatm-btn').addEventListener('click', () => {
+        const { pct } = progressStats();
+        const msg = pct < 100
+            ? `You've read ${pct}% this khatm. Mark it complete and start a new one?`
+            : 'Mark this khatm complete and start a new one? Alhamdulillah!';
+        if (confirm(msg)) {
+            completeKhatm();
+            const c = (state.progress.khatms || []).length;
+            if (khatmCountEl) khatmCountEl.textContent = c ? `${c} khatm${c > 1 ? 's' : ''} completed` : '';
+        }
+    });
+    document.getElementById('progress-reset-btn').addEventListener('click', () => {
+        if (confirm('Reset reading progress for the current khatm?')) resetProgress();
     });
 
     // Theme toggle
