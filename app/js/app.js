@@ -270,6 +270,30 @@ function completeKhatm() {
     resetProgress();
 }
 
+// ============================================================
+// Ayah -> page jump (uses data/page-ayah-index.json)
+// ============================================================
+let _ayahIndex = null;
+let _ayahIndexPromise = null;
+
+function loadAyahIndex() {
+    if (_ayahIndex) return Promise.resolve(_ayahIndex);
+    if (!_ayahIndexPromise) {
+        _ayahIndexPromise = fetch('data/page-ayah-index.json')
+            .then(r => { if (!r.ok) throw new Error('index ' + r.status); return r.json(); })
+            .then(j => { _ayahIndex = j; return j; })
+            .catch(err => { _ayahIndexPromise = null; throw err; });
+    }
+    return _ayahIndexPromise;
+}
+
+// Resolve a surah:ayah to a page number, or null if not found.
+function pageForAyah(index, surah, ayah) {
+    const map = index && index.ayahToPage;
+    if (!map) return null;
+    return map[surah + ':' + ayah] || null;
+}
+
 function showPageIndicator(page) {
     if (!dom.pageIndicator) return;
     dom.pageIndicator.textContent = page;
@@ -762,6 +786,22 @@ function setupMenu() {
             </div>
         </div>
 
+        <!-- Go to Ayah -->
+        <div class="menu-section">
+            <div class="menu-section-title collapsible" data-target="ayah-jump-content">Go to Ayah <span class="collapse-arrow">&#9660;</span></div>
+            <div id="ayah-jump-content" class="collapsible-content">
+                <div style="display:flex;gap:8px;">
+                    <input type="number" id="ayah-jump-surah" min="1" max="114" placeholder="Surah (1-114)"
+                        style="flex:1;padding:10px 14px;border:1.5px solid var(--menu-border);border-radius:var(--btn-radius);background:transparent;color:var(--menu-text);font-size:14px;outline:none;">
+                    <input type="number" id="ayah-jump-ayah" min="1" placeholder="Ayah"
+                        style="flex:1;padding:10px 14px;border:1.5px solid var(--menu-border);border-radius:var(--btn-radius);background:transparent;color:var(--menu-text);font-size:14px;outline:none;">
+                    <button id="ayah-jump-btn"
+                        style="padding:10px 20px;border:none;border-radius:var(--btn-radius);background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Go</button>
+                </div>
+                <div id="ayah-jump-msg" style="font-size:12px;color:#c0392b;margin-top:6px;min-height:14px;"></div>
+            </div>
+        </div>
+
         <!-- Settings -->
         <div class="menu-section">
             <div class="menu-section-title collapsible" data-target="settings-content">Settings <span class="collapse-arrow">&#9660;</span></div>
@@ -872,6 +912,41 @@ function setupMenu() {
     pageJumpInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') doPageJump();
     });
+
+    // Go to Ayah
+    const ayahSurahInput = document.getElementById('ayah-jump-surah');
+    const ayahAyahInput = document.getElementById('ayah-jump-ayah');
+    const ayahJumpBtn = document.getElementById('ayah-jump-btn');
+    const ayahMsg = document.getElementById('ayah-jump-msg');
+    const doAyahJump = async () => {
+        const surah = parseInt(ayahSurahInput.value, 10);
+        const ayah = parseInt(ayahAyahInput.value, 10);
+        if (!(surah >= 1 && surah <= 114) || !(ayah >= 1)) {
+            ayahMsg.textContent = 'Enter a surah (1-114) and ayah number.';
+            return;
+        }
+        ayahMsg.style.color = '#888';
+        ayahMsg.textContent = 'Looking up…';
+        try {
+            const index = await loadAyahIndex();
+            const page = pageForAyah(index, surah, ayah);
+            if (page) {
+                ayahMsg.textContent = '';
+                goToPage(page);
+                closeMenu();
+            } else {
+                ayahMsg.style.color = '#c0392b';
+                ayahMsg.textContent = `Ayah ${surah}:${ayah} not found.`;
+            }
+        } catch (e) {
+            ayahMsg.style.color = '#c0392b';
+            ayahMsg.textContent = 'Could not load ayah index (offline?).';
+        }
+    };
+    ayahJumpBtn.addEventListener('click', doAyahJump);
+    [ayahSurahInput, ayahAyahInput].forEach(el => el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') doAyahJump();
+    }));
 
     // Reading progress
     if (!_visitedSet) _visitedSet = new Set(state.progress.visited);
