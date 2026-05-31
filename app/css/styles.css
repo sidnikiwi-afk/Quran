@@ -191,30 +191,6 @@ html, body {
 /* ============================================================
    Juz Tab
    ============================================================ */
-#juz-tab {
-    position: fixed;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%) translateX(100%);
-    background: var(--accent);
-    color: #fff;
-    font-family: var(--font-arabic);
-    font-size: 14px;
-    padding: 10px 8px 10px 12px;
-    border-radius: 8px 0 0 8px;
-    z-index: 20;
-    transition: transform var(--transition-normal);
-    cursor: pointer;
-    writing-mode: vertical-rl;
-    text-orientation: mixed;
-    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
-}
-
-#juz-tab.visible {
-    transform: translateY(-50%) translateX(0);
-}
-
-
 /* ============================================================
    Markers Layer
    ============================================================ */

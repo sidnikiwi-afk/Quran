@@ -25,7 +25,6 @@ const PRELOAD_RANGE = 5;
 const SWIPE_THRESHOLD = 50;
 const LONG_PRESS_MS = 500;
 const PAGE_INDICATOR_MS = 2000;
-const JUZ_TAB_MS = 3000;
 const DEBOUNCE_SAVE_MS = 500;
 
 // ============================================================
@@ -67,7 +66,6 @@ function cacheDom() {
         tapLeft: document.getElementById('tap-left'),
         tapRight: document.getElementById('tap-right'),
         pageIndicator: document.getElementById('page-indicator'),
-        juzTab: document.getElementById('juz-tab'),
         markersLayer: document.getElementById('markers-layer'),
         menuBtn: document.getElementById('menu-btn'),
         menuOverlay: document.getElementById('menu-overlay'),
@@ -146,7 +144,6 @@ function getImageUrl(page, tier = 'medium') {
 }
 
 let _indicatorTimer = null;
-let _juzTabTimer = null;
 
 function renderPage(page, skipBlur) {
     // 1. Clamp page
@@ -210,10 +207,7 @@ function renderPage(page, skipBlur) {
     // 5. Update page indicator
     showPageIndicator(page);
 
-    // 6. Update juz tab
-    showJuzTab(page);
-
-    // 7. Preload adjacent pages
+    // 6. Preload adjacent pages
     preloadAdjacent(page);
 
     // 8. Save state
@@ -249,21 +243,6 @@ function findCurrentJuz(page) {
         }
     }
     return result;
-}
-
-function showJuzTab(page) {
-    if (!dom.juzTab) return;
-    const juz = findCurrentJuz(page);
-    if (!juz) return;
-    dom.juzTab.textContent = '\u062c\u0632\u0621 ' + juz.number;
-    // Position vertically based on juz number (1-30)
-    const pct = ((juz.number - 1) / 29) * 80 + 10; // 10%-90% range
-    dom.juzTab.style.top = pct + '%';
-    dom.juzTab.classList.add('visible');
-    clearTimeout(_juzTabTimer);
-    _juzTabTimer = setTimeout(() => {
-        dom.juzTab.classList.remove('visible');
-    }, JUZ_TAB_MS);
 }
 
 function renderMarkers(page) {
