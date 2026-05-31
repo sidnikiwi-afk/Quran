@@ -1234,9 +1234,28 @@ function setupWakeLock() {
 // ============================================================
 function registerServiceWorker() {
     if ('serviceWorker' in navigator) {
+        // Auto-update: when a new service worker takes control, reload once so the
+        // latest app.js / metadata.json / styles are picked up without a manual cache
+        // clear. The reader restores its current page from saved state, so the reload
+        // is seamless. Skip the reload on first-ever install (no prior controller).
+        const hadController = !!navigator.serviceWorker.controller;
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (refreshing || !hadController) return;
+            refreshing = true;
+            window.location.reload();
+        });
+
         navigator.serviceWorker.register('./sw.js')
             .then(reg => {
                 console.log('SW registered:', reg.scope);
+                // Proactively check for a new version: now, hourly, and whenever the
+                // app is brought back to the foreground (key for installed PWAs).
+                reg.update();
+                setInterval(() => reg.update(), 60 * 60 * 1000);
+                document.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState === 'visible') reg.update();
+                });
             })
             .catch(err => {
                 console.warn('SW registration failed:', err);
