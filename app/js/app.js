@@ -347,6 +347,8 @@ const SURAH_AUDIO_BASE = 'https://download.quranicaudio.com/quran/bandar_baleela
 const EVERYAYAH_BASE = 'https://everyayah.com/data/';
 // Ayahs per surah (Hafs, 6236 total) — for ayah-by-ayah sequencing.
 const AYAH_COUNTS = [7,286,200,176,120,165,206,75,129,109,123,111,43,52,99,128,111,110,98,135,112,78,118,64,77,227,93,88,69,60,34,30,73,54,45,83,182,88,75,85,54,53,89,59,37,35,38,29,18,45,60,49,62,55,78,96,29,22,24,13,14,11,11,18,12,12,30,52,52,44,28,28,20,56,40,31,50,40,46,42,29,19,36,25,22,17,19,26,30,20,15,21,11,8,8,19,5,8,8,11,11,8,3,9,5,4,7,3,6,3,5,4,5,6];
+// The 15 sajda (prostration) verses, Hafs numbering [surah, ayah].
+const SAJDA_VERSES = [[7,206],[13,15],[16,50],[17,109],[19,58],[22,18],[22,77],[25,60],[27,26],[32,15],[38,24],[41,38],[53,62],[84,21],[96,19]];
 // Tier 2 per-ayah reciters (everyayah.com). Bandar Baleelah is NOT on per-ayah sources.
 const AYAH_RECITERS = [
     { id: 'Alafasy_128kbps', name: 'Mishary Alafasy' },
@@ -1210,6 +1212,14 @@ function setupMenu() {
             </div>
         </div>
 
+        <!-- Sajda verses -->
+        <div class="menu-section">
+            <div class="menu-section-title collapsible collapsed" data-target="sajda-content">Sajda verses <span class="collapse-arrow">&#9660;</span></div>
+            <div id="sajda-content" class="collapsible-content collapsed">
+                <ul class="surah-list" id="sajda-list"></ul>
+            </div>
+        </div>
+
         <!-- Audio -->
         <div class="menu-section">
             <div class="menu-section-title collapsible" data-target="audio-content">Audio <span class="collapse-arrow">&#9660;</span></div>
@@ -1427,6 +1437,26 @@ function setupMenu() {
     [ayahSurahInput, ayahAyahInput].forEach(el => el.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') doAyahJump();
     }));
+
+    // Sajda verses list
+    const sajdaList = document.getElementById('sajda-list');
+    if (sajdaList) {
+        sajdaList.innerHTML = '';
+        SAJDA_VERSES.forEach(([s, a]) => {
+            const surah = (state.metadata.surahs || []).find(x => x.number === s);
+            const li = document.createElement('li');
+            li.className = 'surah-item';
+            li.innerHTML = `<span class="surah-page" style="font-size:12px;color:#888;flex-shrink:0;min-width:44px;">${s}:${a}</span><span class="surah-name-en">${surah ? surah.name : 'Surah ' + s}</span>`;
+            li.addEventListener('click', async () => {
+                try {
+                    const idx = await loadAyahIndex();
+                    const pg = idx.ayahToPage[`${s}:${a}`];
+                    if (pg) { goToPage(pg); closeMenu(); }
+                } catch (e) {}
+            });
+            sajdaList.appendChild(li);
+        });
+    }
 
     // Ayah text search
     const searchInputEl = document.getElementById('ayah-search-input');
