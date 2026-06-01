@@ -102,6 +102,15 @@ Added in the 2026-05-31 upgrade pass:
   `audioStep()`/`audioEnded()` (mode-aware). Streaming only, no bulk cache.
   Page-level index gives ayah sequencing + auto-turn but NOT on-image ayah
   highlight (no x/y geometry) — out of scope.
+- **Ayah highlight** — line-level strips follow Tier-2 audio (`renderHighlight`),
+  using `page-lines.json` (per-line boxes) + `ayah-lines.json` (RTL fractional
+  segments). Shared-line edges are **inset (bias-early)** so it never bleeds into
+  the neighbour ayah. Intra-line cut is approximate (justified text; no word
+  x-boxes) — exact line membership, approximate horizontal trim.
+- **Hifz mode** (menu section) — (1) **Repeat range**: From/To surah:ayah + Times
+  (0 = ∞) loops the ayah range via Tier-2 audio; (2) **Hide lines**: opaque covers
+  over each line (`#hifz-cover-layer`, page-lines bands), tap a line to reveal.
+  Keys: `startHifzRange()`, `audioEnded()` range branch, `renderHifzCovers()`.
 
 ## Upgrade roadmap
 Tracked on the Hermes kanban board **`quran`** (http://127.0.0.1:9119/kanban →
