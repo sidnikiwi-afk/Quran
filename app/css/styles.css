@@ -975,3 +975,25 @@ body.dual-page #page-img-2 {
     background: transparent;
 }
 .hifz-cover.revealed::after { opacity: 0; }
+
+/* ============================================================
+   Sepia theme (warm reading, no invert)
+   ============================================================ */
+[data-theme="sepia"] {
+    --bg-color: #f4ecd8;
+    --text-color: #5b4636;
+    --menu-bg: #f7f1e1;
+    --menu-text: #5b4636;
+    --menu-border: #e0d4ba;
+    --overlay-bg: rgba(60, 45, 30, 0.45);
+    --accent-light: #e9dcc0;
+    --indicator-bg: rgba(91, 70, 54, 0.6);
+    --indicator-text: #f4ecd8;
+    --dialog-bg: #f7f1e1;
+}
+[data-theme="sepia"] #page-img,
+[data-theme="sepia"] #page-img-2,
+[data-theme="sepia"] .swipe-incoming img {
+    filter: sepia(0.55) brightness(0.97) contrast(1.02);
+    mix-blend-mode: multiply;
+}

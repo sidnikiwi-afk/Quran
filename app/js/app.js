@@ -57,7 +57,14 @@ async function init() {
     setupWakeLock();
     initAudio();
     registerServiceWorker();
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        _deferredInstallPrompt = e;
+        const btn = document.getElementById('install-btn');
+        if (btn) btn.removeAttribute('hidden');
+    });
 }
+let _deferredInstallPrompt = null;
 
 function cacheDom() {
     dom = {
@@ -1270,11 +1277,13 @@ function setupMenu() {
             <div id="settings-content" class="collapsible-content">
 
             <div class="setting-row">
-                <span class="setting-label">Dark Mode</span>
-                <label class="toggle">
-                    <input type="checkbox" id="theme-toggle" ${state.theme === 'dark' ? 'checked' : ''}>
-                    <span class="toggle-track"></span>
-                </label>
+                <span class="setting-label">Theme</span>
+                <select id="theme-select"
+                    style="padding:6px 10px;border:1.5px solid var(--menu-border);border-radius:var(--btn-radius);background:var(--menu-bg);color:var(--menu-text);font-size:14px;outline:none;cursor:pointer;">
+                    <option value="light" ${state.theme === 'light' ? 'selected' : ''}>Light</option>
+                    <option value="sepia" ${state.theme === 'sepia' ? 'selected' : ''}>Sepia</option>
+                    <option value="dark" ${state.theme === 'dark' ? 'selected' : ''}>Dark</option>
+                </select>
             </div>
 
             <div class="setting-row">
@@ -1326,6 +1335,9 @@ function setupMenu() {
                 <button id="download-all-btn"
                     style="width:100%;padding:12px;border:none;border-radius:var(--btn-radius);background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Download All Pages</button>
                 <div id="download-progress" style="display:none;margin-top:8px;text-align:center;font-size:13px;color:#888;"></div>
+                <button id="install-btn" hidden
+                    style="width:100%;padding:11px;border:1.5px solid var(--accent);border-radius:var(--btn-radius);background:transparent;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;margin-top:10px;">Install app</button>
+                <div id="storage-usage" style="margin-top:10px;text-align:center;font-size:12px;color:#888;"></div>
             </div>
         </div>
     `;
@@ -1518,8 +1530,8 @@ function setupMenu() {
     });
 
     // Theme toggle
-    document.getElementById('theme-toggle').addEventListener('change', (e) => {
-        setTheme(e.target.checked ? 'dark' : 'light');
+    document.getElementById('theme-select').addEventListener('change', (e) => {
+        setTheme(e.target.value);
     });
 
     // Dual page select
@@ -1551,6 +1563,25 @@ function setupMenu() {
     document.getElementById('download-all-btn').addEventListener('click', () => {
         startDownloadAll();
     });
+
+    // Install (A2HS) + storage usage
+    const installBtn = document.getElementById('install-btn');
+    if (installBtn) {
+        if (_deferredInstallPrompt) installBtn.removeAttribute('hidden');
+        installBtn.addEventListener('click', async () => {
+            if (!_deferredInstallPrompt) return;
+            _deferredInstallPrompt.prompt();
+            await _deferredInstallPrompt.userChoice;
+            _deferredInstallPrompt = null;
+            installBtn.setAttribute('hidden', '');
+        });
+    }
+    const su = document.getElementById('storage-usage');
+    if (su && navigator.storage && navigator.storage.estimate) {
+        navigator.storage.estimate().then(({ usage }) => {
+            if (usage != null) su.textContent = `Offline storage used: ${(usage / 1048576).toFixed(1)} MB`;
+        }).catch(() => {});
+    }
 
     // Add bookmark button
     document.getElementById('add-bookmark-btn').addEventListener('click', () => {
@@ -1702,11 +1733,11 @@ function setTheme(theme) {
     // Update theme-color meta tag
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (metaThemeColor) {
-        metaThemeColor.setAttribute('content', theme === 'dark' ? '#1a1a1a' : '#ffffff');
+        const colors = { dark: '#1a1a1a', sepia: '#f4ecd8', light: '#ffffff' };
+        metaThemeColor.setAttribute('content', colors[theme] || '#ffffff');
     }
-    // Update toggle if it exists
-    const toggle = document.getElementById('theme-toggle');
-    if (toggle) toggle.checked = (theme === 'dark');
+    const sel = document.getElementById('theme-select');
+    if (sel) sel.value = theme;
     saveState();
 }
 
