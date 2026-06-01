@@ -1,11 +1,50 @@
-<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<!DOCTYPE html><html lang="ar" dir="rtl"><head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=8,user-scalable=yes">
 <title>SVG pages — zoom test</title>
-<style>*{margin:0;box-sizing:border-box}body{background:#eee;font-family:-apple-system,sans-serif;padding:10px}
-.note{max-width:480px;margin:0 auto 12px;font-size:13px;text-align:center;color:#555;line-height:1.45}.note b{color:#1a6b4a}
-.cap{max-width:480px;margin:18px auto 4px;font-size:12px;color:#888;text-align:center}
-img{max-width:480px;width:100%;display:block;margin:0 auto;background:#fffdf7;border:1px solid #ccc;border-radius:4px}</style></head><body>
-<div class="note">VALIDATION SAMPLE — these are the scanned pages <b>vector-traced (SVG)</b>: exact same print, but <b>pinch-zoom in as far as you like — no pixelation</b>. Representative pages: ornate (1), dense (10), surah-starts (392/448), Mulk (786), heavy border (846), last (847).</div>
-<div class="cap">Page 1</div><img loading="lazy" src="svg/1.svg" alt="page 1"><div class="cap">Page 10</div><img loading="lazy" src="svg/10.svg" alt="page 10"><div class="cap">Page 392</div><img loading="lazy" src="svg/392.svg" alt="page 392"><div class="cap">Page 448</div><img loading="lazy" src="svg/448.svg" alt="page 448"><div class="cap">Page 604</div><img loading="lazy" src="svg/604.svg" alt="page 604"><div class="cap">Page 786</div><img loading="lazy" src="svg/786.svg" alt="page 786"><div class="cap">Page 846</div><img loading="lazy" src="svg/846.svg" alt="page 846"><div class="cap">Page 847</div><img loading="lazy" src="svg/847.svg" alt="page 847">
-<div class="note" style="margin-top:20px">If these stay sharp + faithful when zoomed on your phone, we roll it out to all 847 (with the WebP scan kept as a fallback).</div>
+<style>
+*{margin:0;box-sizing:border-box}
+body{background:#eee;font-family:-apple-system,'Segoe UI',sans-serif;padding:10px;color:#444}
+.note{max-width:520px;margin:0 auto 12px;font-size:13px;text-align:center;color:#555;line-height:1.45}.note b{color:#1a6b4a}
+.bar{position:sticky;top:0;z-index:5;display:flex;gap:8px;justify-content:center;align-items:center;background:#eee;padding:8px 0;flex-wrap:wrap}
+.bar button{padding:8px 14px;border:1.5px solid #1a6b4a;border-radius:8px;background:#fff;color:#1a6b4a;font-size:15px;font-weight:600;cursor:pointer}
+.bar .z{min-width:54px;text-align:center}
+.scroll{overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid #ccc;border-radius:6px;background:#fffdf7;margin:0 auto;max-width:100%}
+#stage{margin:0 auto}
+#stage svg{display:block;height:auto;background:#fffdf7}
+.cap{max-width:520px;margin:10px auto 4px;font-size:12px;color:#888;text-align:center}
+</style></head><body>
+<div class="note">SVG ZOOM TEST (fixed) — the page is now <b>inlined as real vector</b>. Use <b>the + / − buttons</b> to zoom (this re-draws the vector — stays sharp). Avoid the browser pinch, which only magnifies pixels.</div>
+<div class="bar">
+  <button id="prev">‹ Prev</button>
+  <button id="zin">＋</button><span class="z" id="zlbl">100%</span><button id="zout">−</button>
+  <button id="next">Next ›</button>
+</div>
+<div class="cap" id="cap"></div>
+<div class="scroll"><div id="stage"></div></div>
+<script>
+const PAGES=[1,10,392,448,604,786,846,847];
+let i=0, zoom=1, baseW=0;
+const stage=document.getElementById('stage'), scroll=document.querySelector('.scroll');
+async function load(){
+  const pg=PAGES[i];
+  document.getElementById('cap').textContent='Page '+pg+'  ('+(i+1)+'/'+PAGES.length+')';
+  const txt=await fetch('svg/'+pg+'.svg').then(r=>r.text());
+  stage.innerHTML=txt;
+  const svg=stage.querySelector('svg');
+  svg.removeAttribute('width'); svg.removeAttribute('height');
+  baseW=Math.min(scroll.clientWidth, 520); zoom=1; applyZoom();
+}
+function applyZoom(){
+  const svg=stage.querySelector('svg'); if(!svg) return;
+  svg.style.width=(baseW*zoom)+'px';
+  document.getElementById('zlbl').textContent=Math.round(zoom*100)+'%';
+}
+document.getElementById('zin').onclick=()=>{zoom=Math.min(zoom*1.6,12);applyZoom();};
+document.getElementById('zout').onclick=()=>{zoom=Math.max(zoom/1.6,1);applyZoom();};
+document.getElementById('next').onclick=()=>{i=(i+1)%PAGES.length;load();};
+document.getElementById('prev').onclick=()=>{i=(i-1+PAGES.length)%PAGES.length;load();};
+window.addEventListener('resize',()=>{baseW=Math.min(scroll.clientWidth,520);applyZoom();});
+load();
+</script>
 </body></html>
