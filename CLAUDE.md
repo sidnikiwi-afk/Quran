@@ -41,6 +41,11 @@ app/
   `ayahToPage{ "<surah>:<ayah>": <page> }` (page where the ayah begins).
 - Used by **Go to Ayah** (Surah:Ayah jump). Loaded lazily; also in the SW shell
   for offline use. Unblocks audio auto-turn, search, translation panel.
+- **`data/page-lines.json`** — per-page line y-bands (image-height fractions),
+  detected via horizontal projection profile over all 847 pages (trimmed to the
+  QUL line count; even-spacing fallback on ~63 pages). **`data/ayah-lines.json`**
+  — `ayah "S:A" -> [[page,line],...]` from QUL line↔word↔ayah. Power the
+  line-level highlight overlay. Same line bands also feed Hifz hide/reveal.
 - QUL data licence/attribution still TODO before any public re-distribution.
 - A free QUL account (sidni.kiwi@gmail.com) was created to download the gated
   datasets; download path pattern: `/resources/<type>/<hash>/download` → zip → DB.
@@ -95,6 +100,12 @@ big items: Audio (multi-reciter, phased; Bandar Baleelah quarter-Juz files are i
 ayah text search, Hifz mode, translation panel (needs licence clearance).
 
 ## Gotchas
+- **Dual-page (landscape) spread parity:** spreads must be (odd = right, even =
+  left) to match the physical mushaf. `renderPage` anchors to the odd page in
+  dual mode (`if (_isDualActive && page % 2 === 0) page = page - 1`). Don't pair
+  `(currentPage, currentPage+1)` blindly or even-start juz/surahs land wrong.
+- Ayah highlight is **line-level** (full-width line strips), not word boxes —
+  honest to the data (no per-ayah x/y on scans). Highlight follows Tier-2 audio.
 - Don't auto-dark the **page image** from `prefers-color-scheme`; invert is
   opt-in and needs visual QA on real scans (Codex flag).
 - Page-level index does NOT give on-image ayah **regions** (x/y) — no tap-on-ayah
