@@ -41,11 +41,14 @@ app/
   `ayahToPage{ "<surah>:<ayah>": <page> }` (page where the ayah begins).
 - Used by **Go to Ayah** (Surah:Ayah jump). Loaded lazily; also in the SW shell
   for offline use. Unblocks audio auto-turn, search, translation panel.
-- **`data/page-lines.json`** — per-page line y-bands (image-height fractions),
-  detected via horizontal projection profile over all 847 pages (trimmed to the
-  QUL line count; even-spacing fallback on ~63 pages). **`data/ayah-lines.json`**
-  — `ayah "S:A" -> [[page,line],...]` from QUL line↔word↔ayah. Power the
-  line-level highlight overlay. Same line bands also feed Hifz hide/reveal.
+- **`data/page-lines.json`** — per-line **text bounding boxes**
+  `[yTop,yBottom,xLeft,xRight]` (image fractions), from projection profiles
+  (center-tiled y; column-detected x ≈ 0.07–0.91). **`data/ayah-lines.json`** —
+  `ayah "S:A" -> [[page,line,t0,t1],...]` where `t0,t1` are RTL fractions along
+  the line (0=right edge, 1=left); middle lines are `[0,1]`, the first/last line
+  shared with a neighbour ayah is trimmed to that ayah's word span (word-count
+  proportional — exact word x-boxes aren't extractable from the scans). Power the
+  line-level highlight overlay; same boxes feed Hifz hide/reveal.
 - QUL data licence/attribution still TODO before any public re-distribution.
 - A free QUL account (sidni.kiwi@gmail.com) was created to download the gated
   datasets; download path pattern: `/resources/<type>/<hash>/download` → zip → DB.
