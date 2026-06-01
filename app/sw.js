@@ -1,4 +1,4 @@
-const CACHE_NAME = 'quran-v11';
+const CACHE_NAME = 'quran-v12';
 const SHELL_FILES = [
     './',
     './index.html',
@@ -6,6 +6,8 @@ const SHELL_FILES = [
     './js/app.js',
     './data/metadata.json',
     './data/page-ayah-index.json',
+    './data/page-lines.json',
+    './data/ayah-lines.json',
     './manifest.json',
     './icons/icon-192.png',
     './icons/icon-512.png'

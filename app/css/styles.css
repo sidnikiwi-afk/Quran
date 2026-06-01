@@ -925,3 +925,22 @@ body.dual-page #page-img-2 {
     min-width: 34px;
     text-align: center;
 }
+
+/* ============================================================
+   Ayah highlight layer (line-level, follows audio)
+   ============================================================ */
+#ayah-highlight-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 3;
+}
+.ayah-hl-strip {
+    position: absolute;
+    background: rgba(26, 107, 74, 0.22);
+    border-radius: 3px;
+    transition: opacity var(--transition-fast);
+}
+[data-theme="dark"] .ayah-hl-strip {
+    background: rgba(120, 220, 170, 0.25);
+}

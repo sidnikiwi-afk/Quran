@@ -69,6 +69,7 @@ function cacheDom() {
         tapRight: document.getElementById('tap-right'),
         pageIndicator: document.getElementById('page-indicator'),
         markersLayer: document.getElementById('markers-layer'),
+        ayahHighlightLayer: document.getElementById('ayah-highlight-layer'),
         audioBar: document.getElementById('audio-bar'),
         menuBtn: document.getElementById('menu-btn'),
         menuOverlay: document.getElementById('menu-overlay'),
@@ -190,8 +191,8 @@ function renderPage(page, skipBlur) {
             dom.pageImg.src = medImg.src;
             dom.pageImg.style.filter = '';
             dom.pageImg.style.transform = '';
-            // Re-position markers now that image has final dimensions
-            requestAnimationFrame(() => renderMarkers(page));
+            // Re-position markers + ayah highlight now that image has final dimensions
+            requestAnimationFrame(() => { renderMarkers(page); repositionHighlight(); });
         }
     };
 
@@ -229,8 +230,9 @@ function renderPage(page, skipBlur) {
     recordVisited(page);
     saveState();
 
-    // 9. Render markers for this page
+    // 9. Render markers + reposition ayah highlight for this page
     renderMarkers(page);
+    repositionHighlight();
 }
 
 // ============================================================
@@ -366,6 +368,7 @@ function playSurahAudio(n) {
     _audioEl.src = audioSurahUrl(n);
     showAudioBar(true);
     updateAudioMeta();
+    clearHighlight(); // no per-ayah highlight in whole-surah mode
     _playEl();
     if (audioState.followPages) {
         const s = surahById(n);
@@ -388,6 +391,7 @@ function playAyahAudio(s, a) {
     showAudioBar(true);
     updateAudioMeta();
     _playEl();
+    highlightAyah(s, a);
     if (audioState.followPages) {
         loadAyahIndex().then(idx => {
             const p = idx.ayahToPage[s + ':' + a];
@@ -463,6 +467,73 @@ function updateAudioMeta() {
     }
 }
 
+// ============================================================
+// Ayah line-level highlight (follows Tier-2 audio)
+// Uses data/page-lines.json (per-page line y-bands) + data/ayah-lines.json.
+// ============================================================
+let _lineData = null, _lineDataPromise = null, _currentHL = null;
+
+function loadLineData() {
+    if (_lineData) return Promise.resolve(_lineData);
+    if (!_lineDataPromise) {
+        _lineDataPromise = Promise.all([
+            fetch('data/page-lines.json').then(r => { if (!r.ok) throw 0; return r.json(); }),
+            fetch('data/ayah-lines.json').then(r => { if (!r.ok) throw 0; return r.json(); }),
+        ]).then(([pl, al]) => {
+            _lineData = { pageLines: pl.pages, xBounds: pl.xBounds, ayahLines: al.ayahLines };
+            return _lineData;
+        }).catch(e => { _lineDataPromise = null; throw e; });
+    }
+    return _lineDataPromise;
+}
+
+function clearHighlight() {
+    _currentHL = null;
+    if (dom.ayahHighlightLayer) dom.ayahHighlightLayer.innerHTML = '';
+}
+
+function highlightAyah(s, a) {
+    _currentHL = [s, a];
+    loadLineData().then(d => {
+        if (_currentHL && _currentHL[0] === s && _currentHL[1] === a) renderHighlight(d, s, a);
+    }).catch(() => {});
+}
+
+function _imgForPage(pg) {
+    if (pg === state.currentPage && !dom.pageImg.hidden) return dom.pageImg;
+    if (_isDualActive && dom.pageImg2 && !dom.pageImg2.hidden && pg === state.currentPage + 1) return dom.pageImg2;
+    return null;
+}
+
+function renderHighlight(d, s, a) {
+    const layer = dom.ayahHighlightLayer;
+    if (!layer) return;
+    layer.innerHTML = '';
+    const lines = d.ayahLines[s + ':' + a];
+    if (!lines) return;
+    const readerRect = dom.reader.getBoundingClientRect();
+    const [x0, x1] = d.xBounds;
+    for (const [pg, ln] of lines) {
+        const img = _imgForPage(pg);
+        if (!img) continue;
+        const bands = d.pageLines[String(pg)];
+        if (!bands || !bands[ln - 1]) continue;
+        const [ya, yb] = bands[ln - 1];
+        const r = img.getBoundingClientRect();
+        const strip = document.createElement('div');
+        strip.className = 'ayah-hl-strip';
+        strip.style.left = (r.left - readerRect.left + x0 * r.width) + 'px';
+        strip.style.width = ((x1 - x0) * r.width) + 'px';
+        strip.style.top = (r.top - readerRect.top + ya * r.height) + 'px';
+        strip.style.height = ((yb - ya) * r.height) + 'px';
+        layer.appendChild(strip);
+    }
+}
+
+function repositionHighlight() {
+    if (_currentHL && _lineData) renderHighlight(_lineData, _currentHL[0], _currentHL[1]);
+}
+
 function initAudio() {
     _audioEl = document.getElementById('audio-el');
     if (!_audioEl) return;
@@ -494,6 +565,7 @@ function initAudio() {
     document.getElementById('audio-close').addEventListener('click', () => {
         _audioEl.pause();
         showAudioBar(false);
+        clearHighlight();
     });
 
     if ('mediaSession' in navigator) {
@@ -1195,7 +1267,7 @@ function setupMenu() {
         recSel.value = audioState.mode === 'ayah' ? 'ayah:' + audioState.reciter : 'surah';
         recSel.addEventListener('change', (e) => {
             const v = e.target.value;
-            if (v === 'surah') { audioState.mode = 'surah'; }
+            if (v === 'surah') { audioState.mode = 'surah'; clearHighlight(); }
             else { audioState.mode = 'ayah'; audioState.reciter = v.slice(5); }
         });
     }
@@ -1432,8 +1504,9 @@ function setupDualPage() {
     _dualPageMediaQuery.addEventListener('change', updateDualPageMode);
     window.addEventListener('resize', () => {
         updateDualPageMode();
-        // Re-position markers layer on resize
+        // Re-position markers + ayah highlight on resize
         renderMarkers(state.currentPage);
+        repositionHighlight();
     });
     updateDualPageMode();
 }
