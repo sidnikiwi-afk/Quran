@@ -480,7 +480,7 @@ function loadLineData() {
             fetch('data/page-lines.json').then(r => { if (!r.ok) throw 0; return r.json(); }),
             fetch('data/ayah-lines.json').then(r => { if (!r.ok) throw 0; return r.json(); }),
         ]).then(([pl, al]) => {
-            _lineData = { pageLines: pl.pages, xBounds: pl.xBounds, ayahLines: al.ayahLines };
+            _lineData = { pageLines: pl.pages, ayahLines: al.ayahLines };
             return _lineData;
         }).catch(e => { _lineDataPromise = null; throw e; });
     }
@@ -512,18 +512,21 @@ function renderHighlight(d, s, a) {
     const lines = d.ayahLines[s + ':' + a];
     if (!lines) return;
     const readerRect = dom.reader.getBoundingClientRect();
-    const [x0, x1] = d.xBounds;
-    for (const [pg, ln] of lines) {
+    for (const seg of lines) {
+        const pg = seg[0], ln = seg[1], t0 = seg[2], t1 = seg[3];
         const img = _imgForPage(pg);
         if (!img) continue;
-        const bands = d.pageLines[String(pg)];
-        if (!bands || !bands[ln - 1]) continue;
-        const [ya, yb] = bands[ln - 1];
+        const boxes = d.pageLines[String(pg)];
+        if (!boxes || !boxes[ln - 1]) continue;
+        const [ya, yb, xL, xR] = boxes[ln - 1];
+        // RTL: t runs from xR (0) to xL (1); the ayah segment covers [t0, t1].
+        const xRight = xR - t0 * (xR - xL);
+        const xLeft = xR - t1 * (xR - xL);
         const r = img.getBoundingClientRect();
         const strip = document.createElement('div');
         strip.className = 'ayah-hl-strip';
-        strip.style.left = (r.left - readerRect.left + x0 * r.width) + 'px';
-        strip.style.width = ((x1 - x0) * r.width) + 'px';
+        strip.style.left = (r.left - readerRect.left + xLeft * r.width) + 'px';
+        strip.style.width = ((xRight - xLeft) * r.width) + 'px';
         strip.style.top = (r.top - readerRect.top + ya * r.height) + 'px';
         strip.style.height = ((yb - ya) * r.height) + 'px';
         layer.appendChild(strip);
