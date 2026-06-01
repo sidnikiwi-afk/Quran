@@ -112,6 +112,22 @@ Added in the 2026-05-31 upgrade pass:
   over each line (`#hifz-cover-layer`, page-lines bands), tap a line to reveal.
   Keys: `startHifzRange()`, `audioEnded()` range branch, `renderHifzCovers()`.
 
+## More shipped features (2026-06-01 batch)
+- **Backup** (Bookmarks menu): Export → `quran-backup.json`; Import → merges
+  bookmarks/markers/progress (dedupe, never overwrite). `exportData`/`importData`.
+- **Ayah text search** (Search menu): normalized-Arabic substring over
+  `data/search-index.json` (lazy) → jump via index. `normalizeArabic`/`searchAyat`.
+- **Sajda verses** menu: 15 standard Hafs sajda verses (`SAJDA_VERSES`) → jump.
+- **Themes**: Light / Sepia / Dark (`setTheme`; sepia = warm palette + sepia
+  filter, no invert).
+- **Install + storage**: A2HS prompt (`beforeinstallprompt`) + `navigator.storage`
+  usage readout in the Offline menu.
+- **Translation panel** (`data/translation-en.json`, Pickthall, public domain):
+  bottom sheet of the current page's ayahs; `openTranslationPanel`.
+- Deferred (noted on cards): cloud sync, ruku/hizb marker lists, daily goals/
+  streaks, smart SW precache-window/low-data, tafsir + tap-on-image overlay.
+- Licensing catalogue: `docs/SOURCES.md`. Pre-deploy checks: `docs/SMOKE-CHECKLIST.md`.
+
 ## Upgrade roadmap
 Tracked on the Hermes kanban board **`quran`** (http://127.0.0.1:9119/kanban →
 "Quran"). Cards refined by Claude Code + a Codex scoping review. Agreed build
