@@ -78,6 +78,7 @@ function cacheDom() {
         markersLayer: document.getElementById('markers-layer'),
         ayahHighlightLayer: document.getElementById('ayah-highlight-layer'),
         hifzCoverLayer: document.getElementById('hifz-cover-layer'),
+        translationPanel: document.getElementById('translation-panel'),
         audioBar: document.getElementById('audio-bar'),
         menuBtn: document.getElementById('menu-btn'),
         menuOverlay: document.getElementById('menu-overlay'),
@@ -242,6 +243,7 @@ function renderPage(page, skipBlur) {
     renderMarkers(page);
     repositionHighlight();
     renderHifzCovers();
+    if (dom.translationPanel && !dom.translationPanel.hidden) renderTranslationPanel();
 }
 
 // ============================================================
@@ -309,6 +311,58 @@ function pageForAyah(index, surah, ayah) {
     const map = index && index.ayahToPage;
     if (!map) return null;
     return map[surah + ':' + ayah] || null;
+}
+
+// ---- Translation panel (data/translation-en.json, lazy) ----
+let _translation = null, _translationPromise = null;
+function loadTranslation() {
+    if (_translation) return Promise.resolve(_translation);
+    if (!_translationPromise) {
+        _translationPromise = fetch('data/translation-en.json')
+            .then(r => { if (!r.ok) throw 0; return r.json(); })
+            .then(j => { _translation = j.ayahText; return _translation; })
+            .catch(e => { _translationPromise = null; throw e; });
+    }
+    return _translationPromise;
+}
+function ayahsOnPage(idx, page) {
+    const p = idx.pages[String(page)];
+    if (!p) return [];
+    const [fS, fA, lS, lA] = p;
+    const out = []; let s = fS, a = fA, guard = 0;
+    while (guard++ < 400) {
+        out.push([s, a]);
+        if (s === lS && a === lA) break;
+        const nx = nextAyahPos(s, a);
+        if (!nx) break;
+        [s, a] = nx;
+    }
+    return out;
+}
+function openTranslationPanel() {
+    if (dom.translationPanel) dom.translationPanel.removeAttribute('hidden');
+    renderTranslationPanel();
+}
+function renderTranslationPanel() {
+    const panel = dom.translationPanel;
+    if (!panel || panel.hidden) return;
+    const body = document.getElementById('translation-body');
+    const title = document.getElementById('translation-title');
+    body.textContent = 'Loading…';
+    if (title) title.textContent = 'Translation — page ' + state.currentPage;
+    Promise.all([loadAyahIndex(), loadTranslation()]).then(([idx, tr]) => {
+        if (panel.hidden) return;
+        const ayat = ayahsOnPage(idx, state.currentPage);
+        body.innerHTML = '';
+        if (!ayat.length) { body.textContent = 'No ayahs mapped for this page.'; return; }
+        for (const [s, a] of ayat) {
+            const div = document.createElement('div');
+            div.className = 'tr-ayah';
+            div.innerHTML = `<div class="tr-ref">${s}:${a}</div><div class="tr-text"></div>`;
+            div.querySelector('.tr-text').textContent = tr[s + ':' + a] || '';
+            body.appendChild(div);
+        }
+    }).catch(() => { body.textContent = 'Translation unavailable (offline? open it once online to cache).'; });
 }
 
 // ---- Ayah text search (data/search-index.json, lazy) ----
@@ -684,6 +738,9 @@ function initAudio() {
         showAudioBar(false);
         clearHighlight();
     });
+
+    const trClose = document.getElementById('translation-close');
+    if (trClose) trClose.addEventListener('click', () => { if (dom.translationPanel) dom.translationPanel.setAttribute('hidden', ''); });
 
     if ('mediaSession' in navigator) {
         const ms = navigator.mediaSession;
@@ -1212,6 +1269,16 @@ function setupMenu() {
             </div>
         </div>
 
+        <!-- Translation -->
+        <div class="menu-section">
+            <div class="menu-section-title collapsible collapsed" data-target="translation-content">Translation <span class="collapse-arrow">&#9660;</span></div>
+            <div id="translation-content" class="collapsible-content collapsed">
+                <button id="open-translation-btn"
+                    style="width:100%;padding:11px;border:none;border-radius:var(--btn-radius);background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Show this page's translation</button>
+                <div style="text-align:center;font-size:12px;color:#888;margin-top:6px;">English — M. Pickthall</div>
+            </div>
+        </div>
+
         <!-- Sajda verses -->
         <div class="menu-section">
             <div class="menu-section-title collapsible collapsed" data-target="sajda-content">Sajda verses <span class="collapse-arrow">&#9660;</span></div>
@@ -1437,6 +1504,10 @@ function setupMenu() {
     [ayahSurahInput, ayahAyahInput].forEach(el => el.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') doAyahJump();
     }));
+
+    // Translation panel
+    const openTrBtn = document.getElementById('open-translation-btn');
+    if (openTrBtn) openTrBtn.addEventListener('click', () => { openTranslationPanel(); closeMenu(); });
 
     // Sajda verses list
     const sajdaList = document.getElementById('sajda-list');
