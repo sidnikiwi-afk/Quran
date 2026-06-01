@@ -1,4 +1,4 @@
-const CACHE_NAME = 'quran-v16';
+const CACHE_NAME = 'quran-v17';
 const SHELL_FILES = [
     './',
     './index.html',

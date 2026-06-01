@@ -304,6 +304,34 @@ function pageForAyah(index, surah, ayah) {
     return map[surah + ':' + ayah] || null;
 }
 
+// ---- Ayah text search (data/search-index.json, lazy) ----
+let _searchIndex = null, _searchPromise = null;
+function loadSearchIndex() {
+    if (_searchIndex) return Promise.resolve(_searchIndex);
+    if (!_searchPromise) {
+        _searchPromise = fetch('data/search-index.json')
+            .then(r => { if (!r.ok) throw 0; return r.json(); })
+            .then(j => { _searchIndex = j.ayahText; return _searchIndex; })
+            .catch(e => { _searchPromise = null; throw e; });
+    }
+    return _searchPromise;
+}
+function normalizeArabic(t) {
+    t = t.normalize('NFKD').replace(/[̀-ͯ\p{Mn}\p{Cf}]/gu, '');
+    const map = { 'أ': 'ا', 'إ': 'ا', 'آ': 'ا', 'ٱ': 'ا', 'ى': 'ي', 'ئ': 'ي', 'ؤ': 'و', 'ة': 'ه', 'ـ': '' };
+    t = t.replace(/[أإآٱىئؤةـ]/g, (c) => map[c] ?? c);
+    return t.split(/\s+/).filter(Boolean).join(' ');
+}
+function searchAyat(index, query, limit = 40) {
+    const q = normalizeArabic(query);
+    if (q.length < 2) return [];
+    const out = [];
+    for (const key in index) {
+        if (index[key].indexOf(q) !== -1) { out.push(key); if (out.length >= limit) break; }
+    }
+    return out;
+}
+
 // ============================================================
 // Audio — Tier 1: continuous per-surah recitation (Bandar Baleelah)
 // Streams from the Quran Foundation CDN (no bundling). Surah-level page-follow.
@@ -1165,6 +1193,16 @@ function setupMenu() {
             </div>
         </div>
 
+        <!-- Search -->
+        <div class="menu-section">
+            <div class="menu-section-title collapsible collapsed" data-target="search-content">Search <span class="collapse-arrow">&#9660;</span></div>
+            <div id="search-content" class="collapsible-content collapsed">
+                <input type="text" class="menu-search" id="ayah-search-input" placeholder="Search Quran text…" autocomplete="off" dir="rtl">
+                <div id="ayah-search-msg" style="font-size:12px;color:#888;margin:6px 0;min-height:14px;"></div>
+                <ul class="surah-list" id="ayah-search-results"></ul>
+            </div>
+        </div>
+
         <!-- Audio -->
         <div class="menu-section">
             <div class="menu-section-title collapsible" data-target="audio-content">Audio <span class="collapse-arrow">&#9660;</span></div>
@@ -1272,6 +1310,12 @@ function setupMenu() {
                 <button id="add-bookmark-btn"
                     style="width:100%;padding:10px;border:1.5px dashed var(--accent);border-radius:var(--btn-radius);background:transparent;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:12px;">+ Add Bookmark</button>
                 <ul class="bookmark-list" id="bookmark-list"></ul>
+                <div style="display:flex;gap:8px;margin-top:12px;">
+                    <button id="data-export-btn" style="flex:1;padding:9px;border:1.5px solid var(--menu-border);border-radius:var(--btn-radius);background:transparent;color:var(--menu-text);font-size:13px;cursor:pointer;">Export</button>
+                    <button id="data-import-btn" style="flex:1;padding:9px;border:1.5px solid var(--menu-border);border-radius:var(--btn-radius);background:transparent;color:var(--menu-text);font-size:13px;cursor:pointer;">Import</button>
+                    <input type="file" id="data-import-file" accept="application/json,.json" hidden>
+                </div>
+                <div id="data-io-msg" style="font-size:12px;color:#888;margin-top:6px;min-height:14px;"></div>
             </div>
         </div>
 
@@ -1371,6 +1415,41 @@ function setupMenu() {
     [ayahSurahInput, ayahAyahInput].forEach(el => el.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') doAyahJump();
     }));
+
+    // Ayah text search
+    const searchInputEl = document.getElementById('ayah-search-input');
+    const searchMsg = document.getElementById('ayah-search-msg');
+    const searchResults = document.getElementById('ayah-search-results');
+    let _searchTimer = null;
+    if (searchInputEl) {
+        searchInputEl.addEventListener('input', () => {
+            clearTimeout(_searchTimer);
+            const query = searchInputEl.value.trim();
+            if (query.length < 2) { searchResults.innerHTML = ''; searchMsg.textContent = ''; return; }
+            searchMsg.textContent = 'Searching…';
+            _searchTimer = setTimeout(async () => {
+                try {
+                    const [si, idx] = await Promise.all([loadSearchIndex(), loadAyahIndex()]);
+                    const hits = searchAyat(si, query);
+                    searchResults.innerHTML = '';
+                    if (!hits.length) { searchMsg.textContent = 'No matches.'; return; }
+                    searchMsg.textContent = `${hits.length}${hits.length >= 40 ? '+' : ''} result${hits.length === 1 ? '' : 's'}`;
+                    for (const key of hits) {
+                        const [s, a] = key.split(':');
+                        const surah = (state.metadata.surahs || []).find(x => x.number === +s);
+                        const li = document.createElement('li');
+                        li.className = 'surah-item';
+                        li.innerHTML = `<span class="surah-page" style="font-size:12px;color:#888;flex-shrink:0;min-width:44px;">${s}:${a}</span><span class="surah-name-en">${surah ? surah.name : 'Surah ' + s}</span>`;
+                        li.addEventListener('click', () => {
+                            const pg = idx.ayahToPage[key];
+                            if (pg) { goToPage(pg); closeMenu(); }
+                        });
+                        searchResults.appendChild(li);
+                    }
+                } catch (e) { searchMsg.style.color = '#c0392b'; searchMsg.textContent = 'Search unavailable (offline?).'; }
+            }, 250);
+        });
+    }
 
     // Audio
     const recSel = document.getElementById('audio-reciter-select');
@@ -1483,6 +1562,23 @@ function setupMenu() {
         if (name !== null && name.trim() !== '') {
             addBookmark(name.trim(), state.currentPage);
         }
+    });
+
+    // Backup export / import
+    const ioMsg = document.getElementById('data-io-msg');
+    document.getElementById('data-export-btn').addEventListener('click', () => {
+        exportData();
+        if (ioMsg) { ioMsg.style.color = '#888'; ioMsg.textContent = 'Exported quran-backup.json'; }
+    });
+    const importFile = document.getElementById('data-import-file');
+    document.getElementById('data-import-btn').addEventListener('click', () => importFile.click());
+    importFile.addEventListener('change', (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = () => importData(String(reader.result), ioMsg);
+        reader.readAsText(f);
+        e.target.value = '';
     });
 
     // Menu close button (inside panel)
@@ -1683,6 +1779,69 @@ function deleteBookmark(index) {
     state.bookmarks.splice(index, 1);
     saveState();
     renderBookmarks();
+}
+
+// ------------------------------------------------------------
+// Backup: export / import (bookmarks + markers + progress), with merge
+// ------------------------------------------------------------
+function exportData() {
+    const blob = new Blob([JSON.stringify({
+        schemaVersion: 2,
+        exportedAt: new Date().toISOString(),
+        bookmarks: state.bookmarks,
+        markers: state.markers,
+        progress: state.progress,
+    }, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'quran-backup.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function importData(text, msgEl) {
+    let data;
+    try { data = JSON.parse(text); } catch (e) { if (msgEl) { msgEl.style.color = '#c0392b'; msgEl.textContent = 'Invalid backup file.'; } return; }
+    if (!data || typeof data !== 'object') { if (msgEl) { msgEl.style.color = '#c0392b'; msgEl.textContent = 'Unrecognised backup.'; } return; }
+    let added = 0;
+    // Bookmarks — merge, dedupe by name+page
+    if (Array.isArray(data.bookmarks)) {
+        const seen = new Set(state.bookmarks.map(b => b.name + '|' + b.page));
+        for (const b of data.bookmarks) {
+            if (!b || typeof b.page !== 'number') continue;
+            const key = (b.name || '') + '|' + b.page;
+            if (!seen.has(key)) { state.bookmarks.push({ name: b.name || ('Page ' + b.page), page: b.page }); seen.add(key); added++; }
+        }
+    }
+    // Markers — merge per page, dedupe by x/y/note
+    if (data.markers && typeof data.markers === 'object') {
+        for (const pg of Object.keys(data.markers)) {
+            if (!Array.isArray(data.markers[pg])) continue;
+            const cur = state.markers[pg] || (state.markers[pg] = []);
+            const seen = new Set(cur.map(m => `${m.x}|${m.y}|${m.note || ''}`));
+            for (const m of data.markers[pg]) {
+                const k = `${m.x}|${m.y}|${m.note || ''}`;
+                if (!seen.has(k)) { cur.push(m); seen.add(k); added++; }
+            }
+        }
+    }
+    // Progress — union visited pages, keep max khatm history
+    if (data.progress && Array.isArray(data.progress.visited)) {
+        const set = new Set(state.progress.visited);
+        for (const p of data.progress.visited) if (Number.isInteger(p)) set.add(p);
+        state.progress.visited = [...set].sort((a, b) => a - b);
+        _visitedSet = new Set(state.progress.visited);
+        if (Array.isArray(data.progress.khatms) && data.progress.khatms.length > (state.progress.khatms || []).length) {
+            state.progress.khatms = data.progress.khatms;
+        }
+    }
+    saveState();
+    renderBookmarks();
+    updateProgressUI();
+    if (msgEl) { msgEl.style.color = '#1a6b4a'; msgEl.textContent = `Imported — ${added} new item${added === 1 ? '' : 's'} merged.`; }
 }
 
 function renderBookmarks() {
