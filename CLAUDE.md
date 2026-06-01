@@ -53,6 +53,15 @@ app/
 - A free QUL account (sidni.kiwi@gmail.com) was created to download the gated
   datasets; download path pattern: `/resources/<type>/<hash>/download` → zip → DB.
 
+## Visual smoke test (`dev/`)
+Before a deploy, screenshot the **real** running app in headless Chrome:
+`cd dev && npm install && npm run smoke`. It serves `app/` locally, drives the
+installed Chrome (puppeteer-core), invokes the app's own functions, screenshots
+key states into `dev/screenshots/`, and asserts invariants (e.g. landscape dual
+spread = right 447 / left 448 at Juz 17). Not deployed. Add scenarios in
+`dev/smoke.js`. (Python overlay-on-image checks are still handy for validating
+the line-band/index *data* without a browser.)
+
 ## Service worker discipline (read before editing assets)
 - `sw.js` has `CACHE_NAME = 'quran-vN'`. **Bump N on every change to app.js /
   css / index.html / data files**, or clients keep serving the stale cache.
