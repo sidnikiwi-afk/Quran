@@ -159,6 +159,10 @@ let _indicatorTimer = null;
 function renderPage(page, skipBlur) {
     // 1. Clamp page
     page = Math.max(1, Math.min(page, state.totalPages));
+    // In dual (landscape spread) mode, anchor to the odd page so the spread is
+    // (odd = right, even = left) — matching the physical 13-line mushaf. E.g. Juz 17
+    // (p448) must sit on the LEFT with p447 on the right, not p448-right/p449-left.
+    if (_isDualActive && page % 2 === 0) page = page - 1;
     state.currentPage = page;
 
     // 2. Load image (skip blur if coming from a completed swipe)

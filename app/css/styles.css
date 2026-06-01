@@ -435,13 +435,10 @@ html, body {
 
 /* ---- Juz Pills ---- */
 .juz-pills {
-    display: flex;
-    flex-wrap: nowrap;
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
     gap: 8px;
     padding: 4px 0;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
 }
 
 .juz-pills::-webkit-scrollbar {
