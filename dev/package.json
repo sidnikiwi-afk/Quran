@@ -1,0 +1,12 @@
+{
+  "name": "quran-dev-smoke",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Headless-Chrome visual smoke test for the Quran PWA (screenshots key states).",
+  "scripts": {
+    "smoke": "node smoke.js"
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.1.0"
+  }
+}
