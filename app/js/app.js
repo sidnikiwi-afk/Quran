@@ -70,6 +70,7 @@ function cacheDom() {
         pageIndicator: document.getElementById('page-indicator'),
         markersLayer: document.getElementById('markers-layer'),
         ayahHighlightLayer: document.getElementById('ayah-highlight-layer'),
+        hifzCoverLayer: document.getElementById('hifz-cover-layer'),
         audioBar: document.getElementById('audio-bar'),
         menuBtn: document.getElementById('menu-btn'),
         menuOverlay: document.getElementById('menu-overlay'),
@@ -191,8 +192,8 @@ function renderPage(page, skipBlur) {
             dom.pageImg.src = medImg.src;
             dom.pageImg.style.filter = '';
             dom.pageImg.style.transform = '';
-            // Re-position markers + ayah highlight now that image has final dimensions
-            requestAnimationFrame(() => { renderMarkers(page); repositionHighlight(); });
+            // Re-position markers + ayah highlight + hifz covers now that image has final dimensions
+            requestAnimationFrame(() => { renderMarkers(page); repositionHighlight(); renderHifzCovers(); });
         }
     };
 
@@ -230,9 +231,10 @@ function renderPage(page, skipBlur) {
     recordVisited(page);
     saveState();
 
-    // 9. Render markers + reposition ayah highlight for this page
+    // 9. Render markers + reposition ayah highlight + hifz covers for this page
     renderMarkers(page);
     repositionHighlight();
+    renderHifzCovers();
 }
 
 // ============================================================
@@ -319,7 +321,7 @@ const AYAH_RECITERS = [
     { id: 'Abdurrahmaan_As-Sudais_192kbps', name: 'Abdurrahman As-Sudais' },
 ];
 // mode: 'surah' (Tier 1, Bandar Baleelah whole-surah) | 'ayah' (Tier 2, per-ayah)
-const audioState = { mode: 'surah', surah: null, ayah: null, reciter: 'Alafasy_128kbps', followPages: true, repeat: false };
+const audioState = { mode: 'surah', surah: null, ayah: null, reciter: 'Alafasy_128kbps', followPages: true, repeat: false, range: null };
 let _audioEl = null;
 
 const pad3 = (n) => String(n).padStart(3, '0');
@@ -335,6 +337,11 @@ function prevAyahPos(s, a) {
     if (a > 1) return [s, a - 1];
     if (s > 1) return [s - 1, AYAH_COUNTS[s - 2]];
     return null;
+}
+function ayahOrd(s, a) { // global 1-based ayah ordinal, for range comparisons
+    let o = 0;
+    for (let i = 1; i < s; i++) o += AYAH_COUNTS[i - 1];
+    return o + a;
 }
 
 function surahById(n) {
@@ -365,6 +372,7 @@ function playSurahAudio(n) {
     audioState.mode = 'surah';
     audioState.surah = n;
     audioState.ayah = null;
+    audioState.range = null;
     _audioEl.src = audioSurahUrl(n);
     showAudioBar(true);
     updateAudioMeta();
@@ -402,6 +410,7 @@ function playAyahAudio(s, a) {
 
 // Start playback for the current page in the active mode.
 function playCurrentInMode() {
+    audioState.range = null; // fresh playback isn't a range loop
     if (audioState.mode === 'ayah') {
         loadAyahIndex().then(idx => {
             const pg = idx.pages[String(state.currentPage)];
@@ -419,6 +428,7 @@ function toggleAudio() {
 }
 
 function audioStep(delta) {
+    audioState.range = null; // a manual skip cancels a Hifz range loop
     if (audioState.mode === 'ayah') {
         const cur = audioState.ayah || [1, 1];
         const nx = delta > 0 ? nextAyahPos(cur[0], cur[1]) : prevAyahPos(cur[0], cur[1]);
@@ -429,14 +439,34 @@ function audioStep(delta) {
     }
 }
 
-// Called when a track ends: repeat the ayah, or advance (continuous).
+// Called when a track ends: loop a Hifz range, repeat the ayah, or advance.
 function audioEnded() {
+    if (audioState.mode === 'ayah' && audioState.range && audioState.ayah) {
+        const r = audioState.range, [cs, ca] = audioState.ayah;
+        if (cs === r.toS && ca === r.toA) {            // reached end of range
+            if (r.times > 0 && --r.remaining <= 0) { stopHifzRange(); return; }
+            playAyahAudio(r.fromS, r.fromA);           // loop (infinite if times === 0)
+            return;
+        }
+        const nx = nextAyahPos(cs, ca);
+        if (nx) { playAyahAudio(nx[0], nx[1]); return; }
+        stopHifzRange();
+        return;
+    }
     if (audioState.mode === 'ayah' && audioState.repeat && audioState.ayah) {
         playAyahAudio(audioState.ayah[0], audioState.ayah[1]);
     } else {
         audioStep(1);
     }
 }
+
+function startHifzRange(fromS, fromA, toS, toA, times) {
+    if (ayahOrd(toS, toA) < ayahOrd(fromS, fromA)) { [fromS, fromA, toS, toA] = [toS, toA, fromS, fromA]; }
+    audioState.mode = 'ayah';
+    audioState.range = { fromS, fromA, toS, toA, times: times || 0, remaining: times || 0 };
+    playAyahAudio(fromS, fromA);
+}
+function stopHifzRange() { audioState.range = null; }
 
 function updatePlayPauseIcon() {
     const btn = document.getElementById('audio-playpause');
@@ -512,8 +542,16 @@ function renderHighlight(d, s, a) {
     const lines = d.ayahLines[s + ':' + a];
     if (!lines) return;
     const readerRect = dom.reader.getBoundingClientRect();
+    const INSET = 0.045; // bias-early: pull back from edges that border another ayah
     for (const seg of lines) {
-        const pg = seg[0], ln = seg[1], t0 = seg[2], t1 = seg[3];
+        const pg = seg[0], ln = seg[1];
+        let t0 = seg[2], t1 = seg[3];
+        // Only the first/last line of an ayah shares space with a neighbour (t0>0 or t1<1).
+        // Inset those bordering edges inward so the highlight never bleeds past the ayah
+        // (errs toward stopping a touch early rather than overshooting). Never invert.
+        const cap = (t1 - t0) * 0.3;
+        if (t0 > 0.001) t0 += Math.min(INSET, cap);
+        if (t1 < 0.999) t1 -= Math.min(INSET, cap);
         const img = _imgForPage(pg);
         if (!img) continue;
         const boxes = d.pageLines[String(pg)];
@@ -535,6 +573,45 @@ function renderHighlight(d, s, a) {
 
 function repositionHighlight() {
     if (_currentHL && _lineData) renderHighlight(_lineData, _currentHL[0], _currentHL[1]);
+}
+
+// ============================================================
+// Hifz mode — hide/reveal lines on the current page (uses page-lines.json)
+// ============================================================
+let _hifzHide = false;
+
+function toggleHifzHide(on) {
+    _hifzHide = on;
+    if (dom.hifzCoverLayer) {
+        if (on) dom.hifzCoverLayer.removeAttribute('hidden');
+        else dom.hifzCoverLayer.setAttribute('hidden', '');
+    }
+    renderHifzCovers();
+}
+
+function renderHifzCovers() {
+    const layer = dom.hifzCoverLayer;
+    if (!layer) return;
+    layer.innerHTML = '';
+    if (!_hifzHide) return;
+    loadLineData().then(d => {
+        if (!_hifzHide) return;
+        const boxes = d.pageLines[String(state.currentPage)];
+        if (!boxes || dom.pageImg.hidden) return;
+        const r = dom.pageImg.getBoundingClientRect();
+        const rr = dom.reader.getBoundingClientRect();
+        layer.innerHTML = '';
+        for (const [ya, yb, xL, xR] of boxes) {
+            const cov = document.createElement('div');
+            cov.className = 'hifz-cover';
+            cov.style.left = (r.left - rr.left + xL * r.width) + 'px';
+            cov.style.width = ((xR - xL) * r.width) + 'px';
+            cov.style.top = (r.top - rr.top + ya * r.height) + 'px';
+            cov.style.height = ((yb - ya) * r.height) + 'px';
+            cov.addEventListener('click', () => cov.classList.toggle('revealed'));
+            layer.appendChild(cov);
+        }
+    }).catch(() => {});
 }
 
 function initAudio() {
@@ -1118,6 +1195,37 @@ function setupMenu() {
             </div>
         </div>
 
+        <!-- Hifz (memorization) -->
+        <div class="menu-section">
+            <div class="menu-section-title collapsible collapsed" data-target="hifz-content">Hifz (memorization) <span class="collapse-arrow">&#9660;</span></div>
+            <div id="hifz-content" class="collapsible-content collapsed">
+                <div style="font-size:12px;color:#888;margin-bottom:8px;">Loop a range (ayah-by-ayah audio).</div>
+                <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+                    <span style="font-size:13px;width:34px;">From</span>
+                    <input type="number" id="hifz-from-s" min="1" max="114" placeholder="Surah" style="flex:1;min-width:0;padding:8px;border:1.5px solid var(--menu-border);border-radius:var(--btn-radius);background:transparent;color:var(--menu-text);font-size:13px;">
+                    <input type="number" id="hifz-from-a" min="1" placeholder="Ayah" style="flex:1;min-width:0;padding:8px;border:1.5px solid var(--menu-border);border-radius:var(--btn-radius);background:transparent;color:var(--menu-text);font-size:13px;">
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+                    <span style="font-size:13px;width:34px;">To</span>
+                    <input type="number" id="hifz-to-s" min="1" max="114" placeholder="Surah" style="flex:1;min-width:0;padding:8px;border:1.5px solid var(--menu-border);border-radius:var(--btn-radius);background:transparent;color:var(--menu-text);font-size:13px;">
+                    <input type="number" id="hifz-to-a" min="1" placeholder="Ayah" style="flex:1;min-width:0;padding:8px;border:1.5px solid var(--menu-border);border-radius:var(--btn-radius);background:transparent;color:var(--menu-text);font-size:13px;">
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+                    <span style="font-size:13px;width:34px;">Times</span>
+                    <input type="number" id="hifz-times" min="0" placeholder="0 = ∞" style="flex:1;min-width:0;padding:8px;border:1.5px solid var(--menu-border);border-radius:var(--btn-radius);background:transparent;color:var(--menu-text);font-size:13px;">
+                    <button id="hifz-start" style="flex:1;padding:9px;border:none;border-radius:var(--btn-radius);background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Loop</button>
+                </div>
+                <div id="hifz-range-msg" style="font-size:12px;color:#c0392b;margin-bottom:10px;min-height:14px;"></div>
+                <div class="setting-row">
+                    <span class="setting-label">Hide lines (tap to reveal)</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="hifz-hide-toggle">
+                        <span class="toggle-track"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
         <!-- Settings -->
         <div class="menu-section">
             <div class="menu-section-title collapsible" data-target="settings-content">Settings <span class="collapse-arrow">&#9660;</span></div>
@@ -1283,6 +1391,27 @@ function setupMenu() {
     });
     const repToggle = document.getElementById('audio-repeat-toggle');
     if (repToggle) repToggle.addEventListener('change', (e) => { audioState.repeat = e.target.checked; });
+
+    // Hifz — range loop + hide/reveal
+    const hifzMsg = document.getElementById('hifz-range-msg');
+    document.getElementById('hifz-start').addEventListener('click', () => {
+        const fs = parseInt(document.getElementById('hifz-from-s').value, 10);
+        const fa = parseInt(document.getElementById('hifz-from-a').value, 10);
+        const ts = parseInt(document.getElementById('hifz-to-s').value, 10);
+        const ta = parseInt(document.getElementById('hifz-to-a').value, 10);
+        const times = parseInt(document.getElementById('hifz-times').value, 10) || 0;
+        const valid = (s, a) => s >= 1 && s <= 114 && a >= 1 && a <= AYAH_COUNTS[s - 1];
+        if (!valid(fs, fa) || !valid(ts, ta)) { hifzMsg.textContent = 'Enter valid From and To (surah:ayah).'; return; }
+        hifzMsg.textContent = '';
+        audioState.reciter = audioState.reciter || 'Alafasy_128kbps';
+        startHifzRange(fs, fa, ts, ta, times);
+        closeMenu();
+    });
+    const hideToggle = document.getElementById('hifz-hide-toggle');
+    if (hideToggle) {
+        hideToggle.checked = _hifzHide;
+        hideToggle.addEventListener('change', (e) => { toggleHifzHide(e.target.checked); if (e.target.checked) closeMenu(); });
+    }
 
     // Reading progress
     if (!_visitedSet) _visitedSet = new Set(state.progress.visited);
@@ -1507,9 +1636,10 @@ function setupDualPage() {
     _dualPageMediaQuery.addEventListener('change', updateDualPageMode);
     window.addEventListener('resize', () => {
         updateDualPageMode();
-        // Re-position markers + ayah highlight on resize
+        // Re-position markers + ayah highlight + hifz covers on resize
         renderMarkers(state.currentPage);
         repositionHighlight();
+        renderHifzCovers();
     });
     updateDualPageMode();
 }

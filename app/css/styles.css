@@ -944,3 +944,34 @@ body.dual-page #page-img-2 {
 [data-theme="dark"] .ayah-hl-strip {
     background: rgba(120, 220, 170, 0.25);
 }
+
+/* ============================================================
+   Hifz mode — hide/reveal line covers
+   ============================================================ */
+#hifz-cover-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 15;          /* above tap zones so taps reveal lines, not turn pages */
+    pointer-events: none;
+}
+#hifz-cover-layer[hidden] { display: none; }
+.hifz-cover {
+    position: absolute;
+    background: var(--bg-color);
+    border-radius: 3px;
+    pointer-events: auto;
+    cursor: pointer;
+    transition: opacity var(--transition-fast);
+}
+.hifz-cover::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 3px;
+    background: var(--accent-light);
+    opacity: 0.5;
+}
+.hifz-cover.revealed {
+    background: transparent;
+}
+.hifz-cover.revealed::after { opacity: 0; }
